@@ -4,6 +4,7 @@ import { Channel } from '../entities/Channel'
 import { User } from '../entities/User'
 import { AppError } from '../utils/AppError'
 import { telegramService } from './telegram.service'
+import { achievementService } from './achievement.service'
 
 interface CreatePostDto {
   channelId: string
@@ -61,7 +62,9 @@ class PostsService {
       status: 'draft',
     })
 
-    return this.postRepo.save(post)
+    const saved = await this.postRepo.save(post)
+    achievementService.checkAndAward(userId).catch(() => {})
+    return saved
   }
 
   async updatePost(postId: string, userId: string, content: string): Promise<Post> {
@@ -82,15 +85,20 @@ class PostsService {
       throw new AppError('Post already published', 400)
     }
 
+    let messageId: number | null = null
     try {
-      await telegramService.publishPost(post.channel.telegramChannelId, post.content)
+      const result = await telegramService.publishPost(post.channel.telegramChannelId, post.content)
+      messageId = result.messageId
     } catch {
       throw new AppError('Telegram API error', 500)
     }
 
     post.status = 'published'
     post.publishedAt = new Date()
-    return this.postRepo.save(post)
+    post.messageId = messageId
+    const saved = await this.postRepo.save(post)
+    achievementService.checkAndAward(userId).catch(() => {})
+    return saved
   }
 
   async deletePost(postId: string, userId: string): Promise<void> {

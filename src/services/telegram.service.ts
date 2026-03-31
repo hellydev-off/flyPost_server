@@ -40,6 +40,17 @@ class TelegramService {
     }
   }
 
+  async getChatMemberCount(channelId: string): Promise<number> {
+    if (isMockMode) {
+      return Math.floor(Math.random() * 500) + 1000
+    }
+    try {
+      return await this.getBot().getChatMemberCount(channelId)
+    } catch {
+      return 0
+    }
+  }
+
   async checkBotIsAdmin(channelId: string): Promise<boolean> {
     if (isMockMode) {
       return true

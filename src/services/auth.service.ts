@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken'
+import bcrypt from 'bcrypt'
 import { AppDataSource } from '../config/database'
 import { User } from '../entities/User'
 import { AppError } from '../utils/AppError'
@@ -8,7 +9,8 @@ interface AuthResult {
   token: string
   user: {
     id: string
-    telegramId: string
+    telegramId: string | null
+    email: string | null
     username: string | null
     firstName: string
   }
@@ -17,23 +19,6 @@ interface AuthResult {
 class AuthService {
   private get userRepo() {
     return AppDataSource.getRepository(User)
-  }
-
-  private async findOrCreateUser(
-    telegramId: string,
-    firstName: string,
-    username?: string | null,
-  ): Promise<User> {
-    let user = await this.userRepo.findOne({ where: { telegramId } })
-    if (!user) {
-      user = this.userRepo.create({ telegramId, firstName, username: username ?? null })
-      await this.userRepo.save(user)
-    } else {
-      user.firstName = firstName
-      if (username !== undefined) user.username = username ?? null
-      await this.userRepo.save(user)
-    }
-    return user
   }
 
   private signToken(userId: string): string {
@@ -50,10 +35,45 @@ class AuthService {
       user: {
         id: user.id,
         telegramId: user.telegramId,
+        email: user.email,
         username: user.username,
         firstName: user.firstName,
       },
     }
+  }
+
+  async register(email: string, password: string, firstName: string): Promise<AuthResult> {
+    const existing = await this.userRepo.findOne({ where: { email } })
+    if (existing) {
+      throw new AppError('Пользователь с таким email уже существует', 409)
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10)
+
+    const user = this.userRepo.create({
+      email,
+      passwordHash,
+      firstName,
+      telegramId: null,
+      username: null,
+    })
+    await this.userRepo.save(user)
+
+    return this.toResult(user, this.signToken(user.id))
+  }
+
+  async login(email: string, password: string): Promise<AuthResult> {
+    const user = await this.userRepo.findOne({ where: { email } })
+    if (!user || !user.passwordHash) {
+      throw new AppError('Неверный email или пароль', 401)
+    }
+
+    const valid = await bcrypt.compare(password, user.passwordHash)
+    if (!valid) {
+      throw new AppError('Неверный email или пароль', 401)
+    }
+
+    return this.toResult(user, this.signToken(user.id))
   }
 
   async authenticateWithTelegram(initData: string): Promise<AuthResult> {
@@ -63,18 +83,32 @@ class AuthService {
     }
 
     const { user: tgUser } = parsed
-    const user = await this.findOrCreateUser(
-      String(tgUser.id),
-      tgUser.first_name,
-      tgUser.username,
-    )
+    const telegramId = String(tgUser.id)
+
+    let user = await this.userRepo.findOne({ where: { telegramId } })
+    if (!user) {
+      user = this.userRepo.create({
+        telegramId,
+        firstName: tgUser.first_name,
+        username: tgUser.username ?? null,
+      })
+      await this.userRepo.save(user)
+    } else {
+      user.firstName = tgUser.first_name
+      if (tgUser.username !== undefined) user.username = tgUser.username ?? null
+      await this.userRepo.save(user)
+    }
 
     return this.toResult(user, this.signToken(user.id))
   }
 
-  // Только для dev окружения — обход Telegram валидации
   async devLogin(telegramId: number, firstName: string, username?: string): Promise<AuthResult> {
-    const user = await this.findOrCreateUser(String(telegramId), firstName, username)
+    const tgId = String(telegramId)
+    let user = await this.userRepo.findOne({ where: { telegramId: tgId } })
+    if (!user) {
+      user = this.userRepo.create({ telegramId: tgId, firstName, username: username ?? null })
+      await this.userRepo.save(user)
+    }
     return this.toResult(user, this.signToken(user.id))
   }
 }

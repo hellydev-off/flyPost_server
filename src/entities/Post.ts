@@ -36,6 +36,9 @@ export class Post {
   })
   status!: PostStatus
 
+  @Column({ nullable: true, type: 'bigint' })
+  messageId!: number | null
+
   @Column({ nullable: true, type: 'timestamp' })
   publishedAt!: Date | null
 

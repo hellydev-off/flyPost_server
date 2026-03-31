@@ -16,8 +16,13 @@ import postsRoutes from './routes/posts.routes'
 import schedulerRoutes from './routes/scheduler.routes'
 import aiRoutes from './routes/ai.routes'
 import analyticsRoutes from './routes/analytics.routes'
+import profileRoutes from './routes/profile.routes'
+import competitorRoutes from './routes/competitor.routes'
+import templateRoutes from './routes/template.routes'
+import achievementRoutes from './routes/achievement.routes'
 
 import { schedulerService } from './services/scheduler.service'
+import { statsCollectorService } from './services/statsCollector.service'
 
 const app = express()
 const PORT = process.env.PORT || 3000
@@ -39,6 +44,10 @@ app.use('/api/posts', postsRoutes)
 app.use('/api/scheduler', schedulerRoutes)
 app.use('/api/ai', aiRoutes)
 app.use('/api/analytics', analyticsRoutes)
+app.use('/api/profile', profileRoutes)
+app.use('/api/competitors', competitorRoutes)
+app.use('/api/templates', templateRoutes)
+app.use('/api/achievements', achievementRoutes)
 
 // --- Error handler (должен быть последним) ---
 app.use(errorMiddleware)
@@ -49,6 +58,7 @@ async function bootstrap(): Promise<void> {
   console.log('[DB] PostgreSQL connected')
 
   schedulerService.initialize()
+  statsCollectorService.initialize()
 
   if (!isMockMode) {
     const { startBot } = await import('./bot/bot')

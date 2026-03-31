@@ -9,6 +9,7 @@ import { User } from '../entities/User'
 import { AppError } from '../utils/AppError'
 import { isMockMode } from '../utils/mockMode'
 import { telegramService } from './telegram.service'
+import { achievementService } from './achievement.service'
 
 interface CreateScheduledPostDto {
   postId: string
@@ -66,9 +67,10 @@ class SchedulerService {
     })
 
     try {
-      await telegramService.publishPost(post.channel.telegramChannelId, post.content)
+      const { messageId } = await telegramService.publishPost(post.channel.telegramChannelId, post.content)
       post.status = 'published'
       post.publishedAt = new Date()
+      post.messageId = messageId
       await this.postRepo.save(post)
 
       if (scheduledPost) {
@@ -130,7 +132,9 @@ class SchedulerService {
       status: 'pending',
     })
 
-    return this.scheduledPostRepo.save(scheduledPost)
+    const saved = await this.scheduledPostRepo.save(scheduledPost)
+    achievementService.checkAndAward(userId).catch(() => {})
+    return saved
   }
 
   async updateScheduledPost(

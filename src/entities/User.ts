@@ -13,8 +13,14 @@ export class User {
   @PrimaryGeneratedColumn('uuid')
   id!: string
 
-  @Column({ type: 'bigint', unique: true })
-  telegramId!: string
+  @Column({ type: 'bigint', unique: true, nullable: true })
+  telegramId!: string | null
+
+  @Column({ nullable: true, type: 'varchar', unique: true })
+  email!: string | null
+
+  @Column({ nullable: true, type: 'varchar' })
+  passwordHash!: string | null
 
   @Column({ nullable: true, type: 'varchar' })
   username!: string | null

@@ -4,6 +4,11 @@ import { User } from '../entities/User'
 import { Channel } from '../entities/Channel'
 import { Post } from '../entities/Post'
 import { ScheduledPost } from '../entities/ScheduledPost'
+import { Competitor } from '../entities/Competitor'
+import { ChannelStatsHistory } from '../entities/ChannelStatsHistory'
+import { Template } from '../entities/Template'
+import { ChannelProfile } from '../entities/ChannelProfile'
+import { UserAchievement } from '../entities/UserAchievement'
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -14,6 +19,6 @@ export const AppDataSource = new DataSource({
   database: process.env.DB_NAME || 'flypost',
   synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV === 'development',
-  entities: [User, Channel, Post, ScheduledPost],
+  entities: [User, Channel, Post, ScheduledPost, Competitor, ChannelStatsHistory, Template, ChannelProfile, UserAchievement],
   migrations: ['dist/migrations/**/*.js'],
 })
