@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import { channelsService } from '../services/channels.service'
+import { subscriptionService } from '../services/subscription.service'
 
 export const channelsController = {
   async getAll(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -8,6 +9,7 @@ export const channelsController = {
   },
 
   async create(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await subscriptionService.assertChannelLimit(req.user!.userId)
     const { telegramChannelId, title, username } = req.body as {
       telegramChannelId: string
       title: string

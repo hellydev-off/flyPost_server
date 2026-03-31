@@ -69,7 +69,7 @@ class GrokService {
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: 'grok-4-1',
+          model: process.env.GROK_MODEL ?? 'grok-3',
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt },

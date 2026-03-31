@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import { schedulerService } from '../services/scheduler.service'
+import { subscriptionService } from '../services/subscription.service'
 
 export const schedulerController = {
   async getAll(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -8,6 +9,7 @@ export const schedulerController = {
   },
 
   async schedule(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await subscriptionService.assertScheduledPostsLimit(req.user!.userId)
     const { postId, scheduledAt } = req.body as { postId: string; scheduledAt: string }
     const item = await schedulerService.schedulePost({
       postId,

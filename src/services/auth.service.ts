@@ -4,6 +4,7 @@ import { AppDataSource } from '../config/database'
 import { User } from '../entities/User'
 import { AppError } from '../utils/AppError'
 import { validateTelegramData } from '../utils/validateTelegramData'
+import { subscriptionService } from './subscription.service'
 
 interface AuthResult {
   token: string
@@ -58,6 +59,8 @@ class AuthService {
       username: null,
     })
     await this.userRepo.save(user)
+    // Init 14-day trial subscription (fire-and-forget)
+    subscriptionService.getOrCreate(user.id).catch(() => {})
 
     return this.toResult(user, this.signToken(user.id))
   }
@@ -93,6 +96,7 @@ class AuthService {
         username: tgUser.username ?? null,
       })
       await this.userRepo.save(user)
+      subscriptionService.getOrCreate(user.id).catch(() => {})
     } else {
       user.firstName = tgUser.first_name
       if (tgUser.username !== undefined) user.username = tgUser.username ?? null

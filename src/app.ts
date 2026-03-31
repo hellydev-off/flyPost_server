@@ -20,6 +20,7 @@ import profileRoutes from './routes/profile.routes'
 import competitorRoutes from './routes/competitor.routes'
 import templateRoutes from './routes/template.routes'
 import achievementRoutes from './routes/achievement.routes'
+import subscriptionRoutes from './routes/subscription.routes'
 
 import { schedulerService } from './services/scheduler.service'
 import { statsCollectorService } from './services/statsCollector.service'
@@ -48,6 +49,7 @@ app.use('/api/profile', profileRoutes)
 app.use('/api/competitors', competitorRoutes)
 app.use('/api/templates', templateRoutes)
 app.use('/api/achievements', achievementRoutes)
+app.use('/api/subscription', subscriptionRoutes)
 
 // --- Error handler (должен быть последним) ---
 app.use(errorMiddleware)

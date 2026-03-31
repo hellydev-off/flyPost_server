@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import { templateService } from '../services/template.service'
+import { subscriptionService } from '../services/subscription.service'
 
 export const templateController = {
   async getAll(req: Request, res: Response): Promise<void> {
@@ -9,6 +10,7 @@ export const templateController = {
   },
 
   async create(req: Request, res: Response): Promise<void> {
+    await subscriptionService.assertTemplateLimit(req.user!.userId)
     const template = await templateService.create(req.user!.userId, req.body)
     res.status(201).json(template)
   },
