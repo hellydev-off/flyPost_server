@@ -110,7 +110,7 @@ class GrokService {
     if (isMockMode) {
       await new Promise((resolve) => setTimeout(resolve, 500))
       const profileNote = voiceProfile?.tone ? ` [профиль: ${voiceProfile.tone}]` : ''
-      return `🚀 [MOCK AI] Пост на тему '${topic}' в тоне '${tone}'${profileNote}.\n\nЗдесь будет сгенерированный текст от Grok API.\n\n#тема #контент #flypost`
+      return `🚀 [MOCK AI] Пост на тему '${topic}' в тоне '${tone}'${profileNote}.\n\nЗдесь будет сгенерированный текст от Grok API.\n\n#тема #контент #neopost`
     }
 
     const voiceSection = buildVoiceSection(voiceProfile)
@@ -119,6 +119,37 @@ class GrokService {
     return this.callGrok(
       `Ты помощник для создания постов в Telegram-каналах. Пиши только текст поста без пояснений. Поддерживай Telegram Markdown форматирование.${voiceSection}`,
       `Напиши ${lengthDesc} пост на тему: ${topic}. Тон: ${tone}. Используй эмодзи. Добавь хештеги в конце.`,
+    )
+  }
+
+  async generateDailyPlan(channelTitle: string, timeSlots: string[], recentPostsSummary: string, voiceProfile?: VoiceProfile | null): Promise<string> {
+    if (isMockMode) {
+      await new Promise((resolve) => setTimeout(resolve, 600))
+      return JSON.stringify(
+        timeSlots.map((t) => ({
+          title: `Идея для ${t}`,
+          summary: 'Это мок-идея для дневного плана. Здесь будет реальная генерация.',
+          scheduledTime: t,
+        }))
+      )
+    }
+
+    const voiceSection = buildVoiceSection(voiceProfile)
+    const slotsStr = timeSlots.join(', ')
+
+    return this.callGrok(
+      `Ты контент-стратег для Telegram-каналов. Отвечай ТОЛЬКО валидным JSON без markdown-обёртки.${voiceSection}`,
+      `Создай план постов для Telegram-канала "${channelTitle}" на сегодня.
+
+Временные слоты для публикации: ${slotsStr}
+
+Последние посты канала (для понимания стиля и тематики):
+${recentPostsSummary || 'Нет данных о прошлых постах'}
+
+Верни JSON-массив строго по каждому временному слоту в том же порядке:
+[{"title":"Заголовок","summary":"1-2 предложения о чём пост","scheduledTime":"09:00"}]
+
+Адаптируй контент под время суток: утро (до 11:00) — вовлекающие и новостные, день (11:00–17:00) — информативные и полезные, вечер (после 17:00) — аналитические или лёгкие.`,
     )
   }
 

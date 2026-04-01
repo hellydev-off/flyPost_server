@@ -6,6 +6,7 @@ import { AppDataSource } from '../config/database'
 import { Post } from '../entities/Post'
 import { Channel } from '../entities/Channel'
 import { AppError } from '../utils/AppError'
+import { AiPlan } from '../entities/AiPlan'
 
 /** Extracts first JSON array found in a string, handles markdown fences and surrounding text. */
 function extractJsonArray(raw: string): unknown[] | null {
@@ -29,6 +30,21 @@ function extractJsonArray(raw: string): unknown[] | null {
     }
   }
   return null
+}
+
+const MAX_POSTS_PER_DAY = 8
+
+function buildTimeSlots(startHour: number, intervalMinutes: number): string[] {
+  const slots: string[] = []
+  let current = startHour * 60
+  const end = 22 * 60
+  while (current <= end && slots.length < MAX_POSTS_PER_DAY) {
+    const h = Math.floor(current / 60)
+    const m = current % 60
+    slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+    current += intervalMinutes
+  }
+  return slots
 }
 
 export const aiController = {
@@ -70,6 +86,49 @@ export const aiController = {
     res.json({ content: result })
   },
 
+  async dailyPlan(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { channelId, startHour, intervalMinutes } = req.body as {
+      channelId: string
+      startHour: number
+      intervalMinutes: number
+    }
+    const userId = req.user!.userId
+    await subscriptionService.assertFeature(userId, 'weeklyPlan')
+
+    const channel = await AppDataSource.getRepository(Channel).findOne({
+      where: { id: channelId, user: { id: userId } },
+    })
+    if (!channel) throw new AppError('Channel not found', 404)
+
+    const recentPosts = await AppDataSource.getRepository(Post).find({
+      where: { channel: { id: channelId }, status: 'published' },
+      order: { publishedAt: 'DESC' },
+      take: 10,
+      select: ['id', 'content', 'publishedAt'],
+    })
+
+    const warning = recentPosts.length < 5
+      ? 'Мало опубликованных постов — план может быть неточным'
+      : undefined
+
+    const recentSummary = recentPosts
+      .map((p, i) => `${i + 1}. ${p.content.slice(0, 100)}`)
+      .join('\n')
+
+    const timeSlots = buildTimeSlots(startHour, intervalMinutes)
+    const voiceProfile = await channelProfileService.getByChannelId(channelId)
+    const raw = await grokService.generateDailyPlan(channel.title, timeSlots, recentSummary, voiceProfile)
+
+    const ideas = extractJsonArray(raw)
+    if (!ideas) throw new AppError('AI вернул некорректный ответ. Попробуйте ещё раз.', 502)
+
+    AppDataSource.getRepository(AiPlan).save(
+      AppDataSource.getRepository(AiPlan).create({ userId, channelId, type: 'daily', ideas: ideas as object[], warning: warning ?? null })
+    ).catch(() => {})
+
+    res.json({ ideas, warning })
+  },
+
   async weeklyPlan(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { channelId } = req.body as { channelId: string }
     const userId = req.user!.userId
@@ -84,7 +143,7 @@ export const aiController = {
       where: { channel: { id: channelId }, status: 'published' },
       order: { publishedAt: 'DESC' },
       take: 5,
-      select: ['content'],
+      select: ['id', 'content', 'publishedAt'],
     })
 
     const recentSummary = recentPosts
@@ -98,6 +157,27 @@ export const aiController = {
     const ideas = extractJsonArray(raw)
     if (!ideas) throw new AppError('AI вернул некорректный ответ. Попробуйте ещё раз.', 502)
 
+    AppDataSource.getRepository(AiPlan).save(
+      AppDataSource.getRepository(AiPlan).create({ userId, channelId, type: 'weekly', ideas: ideas as object[] })
+    ).catch(() => {})
+
     res.json({ ideas })
+  },
+
+  async getPlans(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const userId = req.user!.userId
+    const { channelId, type } = req.query as { channelId?: string; type?: string }
+
+    const where: Record<string, unknown> = { userId }
+    if (channelId) where.channelId = channelId
+    if (type === 'daily' || type === 'weekly') where.type = type
+
+    const plans = await AppDataSource.getRepository(AiPlan).find({
+      where,
+      order: { createdAt: 'DESC' },
+      take: 30,
+    })
+
+    res.json({ plans })
   },
 }

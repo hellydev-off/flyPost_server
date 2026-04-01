@@ -11,6 +11,7 @@ import { ChannelProfile } from '../entities/ChannelProfile'
 import { UserAchievement } from '../entities/UserAchievement'
 import { UserSubscription } from '../entities/UserSubscription'
 import { UsageLog } from '../entities/UsageLog'
+import { AiPlan } from '../entities/AiPlan'
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -18,9 +19,9 @@ export const AppDataSource = new DataSource({
   port: parseInt(process.env.DB_PORT || '5432', 10),
   username: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
-  database: process.env.DB_NAME || 'flypost',
+  database: process.env.DB_NAME || 'neopost',
   synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV === 'development',
-  entities: [User, Channel, Post, ScheduledPost, Competitor, ChannelStatsHistory, Template, ChannelProfile, UserAchievement, UserSubscription, UsageLog],
+  entities: [User, Channel, Post, ScheduledPost, Competitor, ChannelStatsHistory, Template, ChannelProfile, UserAchievement, UserSubscription, UsageLog, AiPlan],
   migrations: ['dist/migrations/**/*.js'],
 })

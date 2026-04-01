@@ -1,7 +1,7 @@
 {
-  "name": "flypost-backend",
+  "name": "neopost-backend",
   "version": "1.0.0",
-  "description": "flyPost backend API",
+  "description": "NeoPost backend API",
   "main": "dist/app.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",

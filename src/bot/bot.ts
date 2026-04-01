@@ -25,7 +25,7 @@ async function findUserByTelegramId(telegramId: number): Promise<User | null> {
 async function replyNotFound(chatId: number): Promise<void> {
   await bot.sendMessage(
     chatId,
-    '❌ Аккаунт не найден.\n\nОткрой flyPost и войди через Telegram, чтобы привязать аккаунт.',
+    '❌ Аккаунт не найден.\n\nОткрой NeoPost и войди через Telegram, чтобы привязать аккаунт.',
   )
 }
 
@@ -37,7 +37,7 @@ export function startBot(): void {
     const name = msg.from?.first_name || 'друг'
     bot.sendMessage(
       msg.chat.id,
-      `Привет, ${name}! 👋\n\nЯ бот flyPost. Добавь меня в свой Telegram-канал как администратора, и я смогу публиковать посты через платформу flyPost.\n\n📌 После добавления зарегистрируй канал в личном кабинете.\n\n/help — список команд`,
+      `Привет, ${name}! 👋\n\nЯ бот NeoPost. Добавь меня в свой Telegram-канал как администратора, и я смогу публиковать посты через платформу NeoPost.\n\n📌 После добавления зарегистрируй канал в личном кабинете.\n\n/help — список команд`,
     )
   })
 
@@ -45,7 +45,7 @@ export function startBot(): void {
   bot.onText(/\/help/, (msg) => {
     bot.sendMessage(
       msg.chat.id,
-      `📋 *Команды flyPost:*\n\n` +
+      `📋 *Команды NeoPost:*\n\n` +
         `/idea [тема] — сгенерировать идею поста\n` +
         `/stats — статистика твоих каналов\n` +
         `/drafts — черновики (можно сразу опубликовать)\n` +
@@ -96,11 +96,11 @@ export function startBot(): void {
     })
 
     if (channels.length === 0) {
-      return bot.sendMessage(chatId, '📭 У тебя пока нет каналов. Добавь канал в flyPost.')
+      return bot.sendMessage(chatId, '📭 У тебя пока нет каналов. Добавь канал в NeoPost.')
     }
 
     const postRepo = AppDataSource.getRepository(Post)
-    const lines: string[] = [`📊 *Статистика flyPost*\n`]
+    const lines: string[] = [`📊 *Статистика NeoPost*\n`]
 
     for (const channel of channels) {
       const [published, scheduled, drafts] = await Promise.all([
@@ -132,7 +132,7 @@ export function startBot(): void {
     const drafts = await postsService.getPostsByUser(user.id, { status: 'draft' })
 
     if (drafts.length === 0) {
-      return bot.sendMessage(chatId, '📭 Черновиков нет. Создай пост в flyPost.')
+      return bot.sendMessage(chatId, '📭 Черновиков нет. Создай пост в NeoPost.')
     }
 
     const shown = drafts.slice(0, 5)
@@ -158,7 +158,7 @@ export function startBot(): void {
     if (drafts.length > 5) {
       await bot.sendMessage(
         chatId,
-        `_...и ещё ${drafts.length - 5} черновиков. Открой flyPost, чтобы увидеть все._`,
+        `_...и ещё ${drafts.length - 5} черновиков. Открой NeoPost, чтобы увидеть все._`,
         { parse_mode: 'Markdown' },
       )
     }
@@ -177,7 +177,7 @@ export function startBot(): void {
     const pending = allScheduled.filter((s) => s.status === 'pending')
 
     if (pending.length === 0) {
-      return bot.sendMessage(chatId, '📭 Нет запланированных постов. Создай их в flyPost.')
+      return bot.sendMessage(chatId, '📭 Нет запланированных постов. Создай их в NeoPost.')
     }
 
     const lines: string[] = [`🗓 *Запланировано постов: ${pending.length}*\n`]
@@ -198,7 +198,7 @@ export function startBot(): void {
     }
 
     if (pending.length > 7) {
-      lines.push(`\n_...и ещё ${pending.length - 7}. Все посты — в flyPost._`)
+      lines.push(`\n_...и ещё ${pending.length - 7}. Все посты — в NeoPost._`)
     }
 
     await bot.sendMessage(chatId, lines.join('\n\n'), { parse_mode: 'Markdown' })
@@ -233,7 +233,7 @@ export function startBot(): void {
           )
         }
       } catch {
-        await bot.answerCallbackQuery(query.id, { text: '❌ Ошибка публикации. Попробуй в flyPost.' })
+        await bot.answerCallbackQuery(query.id, { text: '❌ Ошибка публикации. Попробуй в NeoPost.' })
       }
     }
   })

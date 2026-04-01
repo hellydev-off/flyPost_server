@@ -13,9 +13,7 @@ export function errorMiddleware(
     return
   }
 
-  if (process.env.NODE_ENV === 'development') {
-    console.error(err)
-  }
+  console.error('[ERROR]', err)
 
   res.status(500).json({ message: 'Internal server error' })
 }

@@ -3,10 +3,10 @@ version: '3.9'
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: flypost_postgres
+    container_name: neopost_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: flypost
+      POSTGRES_DB: neopost
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
@@ -16,7 +16,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: flypost_redis
+    container_name: neopost_redis
     restart: unless-stopped
     ports:
       - '6379:6379'

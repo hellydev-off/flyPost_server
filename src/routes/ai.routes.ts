@@ -8,6 +8,8 @@ router.use(authMiddleware)
 
 router.post('/generate', aiController.generate)
 router.post('/improve', aiController.improve)
+router.post('/daily-plan', aiController.dailyPlan)
 router.post('/weekly-plan', aiController.weeklyPlan)
+router.get('/plans', aiController.getPlans)
 
 export default router
