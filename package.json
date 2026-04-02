@@ -10,7 +10,9 @@
     "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js --dataSource ormconfig.ts",
     "migration:generate": "npm run typeorm -- migration:generate",
     "migration:run": "npm run typeorm -- migration:run",
-    "migration:revert": "npm run typeorm -- migration:revert"
+    "migration:revert": "npm run typeorm -- migration:revert",
+    "seed": "ts-node scripts/seed.ts",
+    "seed:clean": "ts-node scripts/seed.ts --clean"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
