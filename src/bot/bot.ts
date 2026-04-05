@@ -30,11 +30,7 @@ async function replyNotFound(chatId: number): Promise<void> {
 }
 
 export function startBot(): void {
-  bot.startPolling({
-    params: {
-      allowed_updates: ['message', 'callback_query'] as any,
-    },
-  })
+  bot.startPolling()
 
   // /start
   bot.onText(/\/start/, (msg) => {
