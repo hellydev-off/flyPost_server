@@ -30,7 +30,11 @@ async function replyNotFound(chatId: number): Promise<void> {
 }
 
 export function startBot(): void {
-  bot.startPolling()
+  bot.startPolling({
+    params: {
+      allowed_updates: ['message', 'callback_query'] as any,
+    },
+  })
 
   // /start
   bot.onText(/\/start/, (msg) => {
@@ -212,6 +216,33 @@ export function startBot(): void {
     const data = query.data
 
     if (!chatId || !data) return
+
+    if (data.startsWith('vote:')) {
+      const buttonId = data.slice('vote:'.length)
+      const postRepo = AppDataSource.getRepository(Post)
+
+      const post = await postRepo
+        .createQueryBuilder('p')
+        .where('p.buttons @> :btn', { btn: JSON.stringify([{ id: buttonId }]) })
+        .getOne()
+
+      if (!post || !post.buttons) {
+        await bot.answerCallbackQuery(query.id, { text: '❌ Кнопка не найдена' })
+        return
+      }
+
+      const btn = post.buttons.find(b => b.id === buttonId)
+      if (!btn) {
+        await bot.answerCallbackQuery(query.id, { text: '❌ Кнопка не найдена' })
+        return
+      }
+
+      btn.clickCount += 1
+      await postRepo.save(post)
+
+      await bot.answerCallbackQuery(query.id, { text: '✅ Голос учтён!' })
+      return
+    }
 
     if (data.startsWith('publish:')) {
       const postId = data.slice('publish:'.length)

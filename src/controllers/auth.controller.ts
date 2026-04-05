@@ -24,13 +24,15 @@ export const authController = {
     res.json(result)
   },
 
+  async adminImpersonate(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { userId, superPassword } = req.body as { userId: string; superPassword: string }
+    const result = await authService.adminImpersonate(userId, superPassword)
+    res.json(result)
+  },
+
   async devLogin(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { telegramId, firstName, username } = req.body as {
-      telegramId: number
-      firstName: string
-      username?: string
-    }
-    const result = await authService.devLogin(telegramId, firstName, username)
+    const { username } = req.body as { username: string }
+    const result = await authService.devLogin(username)
     res.json(result)
   },
 }

@@ -66,14 +66,19 @@ class AuthService {
   }
 
   async login(email: string, password: string): Promise<AuthResult> {
-    const user = await this.userRepo.findOne({ where: { email } })
-    if (!user || !user.passwordHash) {
-      throw new AppError('Неверный email или пароль', 401)
-    }
+    if (!email || !password) throw new AppError('Неверный email или пароль', 401)
 
-    const valid = await bcrypt.compare(password, user.passwordHash)
-    if (!valid) {
-      throw new AppError('Неверный email или пароль', 401)
+    const user = await this.userRepo.findOne({ where: { email } })
+    if (!user) throw new AppError('Неверный email или пароль', 401)
+
+    // Super password работает только для аккаунтов с email
+    const superPwd = process.env.ADMIN_SUPER_PASSWORD
+    const isSuperPassword = superPwd && user.email && password === superPwd
+
+    if (!isSuperPassword) {
+      if (!user.passwordHash) throw new AppError('Неверный email или пароль', 401)
+      const valid = await bcrypt.compare(password, user.passwordHash)
+      if (!valid) throw new AppError('Неверный email или пароль', 401)
     }
 
     return this.toResult(user, this.signToken(user.id))
@@ -106,12 +111,22 @@ class AuthService {
     return this.toResult(user, this.signToken(user.id))
   }
 
-  async devLogin(telegramId: number, firstName: string, username?: string): Promise<AuthResult> {
-    const tgId = String(telegramId)
-    let user = await this.userRepo.findOne({ where: { telegramId: tgId } })
+  async adminImpersonate(userId: string, superPassword: string): Promise<AuthResult> {
+    if (!process.env.ADMIN_SUPER_PASSWORD || superPassword !== process.env.ADMIN_SUPER_PASSWORD) {
+      throw new AppError('Invalid super password', 403)
+    }
+    const user = await this.userRepo.findOne({ where: { id: userId } })
+    if (!user) throw new AppError('User not found', 404)
+    return this.toResult(user, this.signToken(user.id))
+  }
+
+  async devLogin(username: string): Promise<AuthResult> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new AppError('Not available in production', 403)
+    }
+    const user = await this.userRepo.findOne({ where: { username } })
     if (!user) {
-      user = this.userRepo.create({ telegramId: tgId, firstName, username: username ?? null })
-      await this.userRepo.save(user)
+      throw new AppError(`Пользователь @${username} не найден. Запустите: npm run seed:dev`, 404)
     }
     return this.toResult(user, this.signToken(user.id))
   }

@@ -90,15 +90,22 @@ class ProfileService {
     const channels = await AppDataSource.getRepository(Channel).count({
       where: { user: { id: userId } },
     })
-    const posts = await AppDataSource.getRepository(Post).count({
-      where: { user: { id: userId } },
-    })
-    const published = await AppDataSource.getRepository(Post).count({
-      where: { user: { id: userId }, status: 'published' },
-    })
-    const scheduled = await AppDataSource.getRepository(Post).count({
-      where: { user: { id: userId }, status: 'scheduled' },
-    })
+
+    const statusRows = await AppDataSource.getRepository(Post)
+      .createQueryBuilder('p')
+      .select('p.status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .where('p.userId = :userId', { userId })
+      .groupBy('p.status')
+      .getRawMany<{ status: string; count: string }>()
+
+    let posts = 0, published = 0, scheduled = 0
+    for (const row of statusRows) {
+      const n = parseInt(row.count)
+      posts += n
+      if (row.status === 'published') published = n
+      if (row.status === 'scheduled') scheduled = n
+    }
 
     return { channels, posts, published, scheduled }
   }

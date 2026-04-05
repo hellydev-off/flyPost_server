@@ -8,6 +8,7 @@ import helmet from 'helmet'
 
 import { AppDataSource } from './config/database'
 import { errorMiddleware } from './middleware/error.middleware'
+import { loggerMiddleware } from './middleware/logger.middleware'
 import { isMockMode } from './utils/mockMode'
 
 import authRoutes from './routes/auth.routes'
@@ -21,6 +22,7 @@ import competitorRoutes from './routes/competitor.routes'
 import templateRoutes from './routes/template.routes'
 import achievementRoutes from './routes/achievement.routes'
 import subscriptionRoutes from './routes/subscription.routes'
+import adminRoutes from './routes/admin.routes'
 
 import { schedulerService } from './services/scheduler.service'
 import { statsCollectorService } from './services/statsCollector.service'
@@ -37,6 +39,8 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }))
 app.use(express.json())
+app.use('/uploads', express.static('uploads'))
+app.use(loggerMiddleware)
 
 // --- Routes ---
 app.use('/api/auth', authRoutes)
@@ -50,6 +54,7 @@ app.use('/api/competitors', competitorRoutes)
 app.use('/api/templates', templateRoutes)
 app.use('/api/achievements', achievementRoutes)
 app.use('/api/subscription', subscriptionRoutes)
+app.use('/api/admin', adminRoutes)
 
 // --- Error handler (должен быть последним) ---
 app.use(errorMiddleware)

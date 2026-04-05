@@ -12,6 +12,30 @@ import { User } from './User'
 import { ScheduledPost } from './ScheduledPost'
 
 export type PostStatus = 'draft' | 'published' | 'scheduled' | 'failed'
+export type MediaType = 'photo' | 'video' | 'audio' | 'document'
+
+export interface MediaFile {
+  type: MediaType
+  url: string       // путь к файлу на диске / URL
+  filename: string
+  size: number
+  mimeType: string
+}
+
+export interface PostButton {
+  id: string
+  text: string
+  type: 'url' | 'vote'
+  url?: string
+  clickCount: number
+}
+
+export interface PostPoll {
+  question: string
+  options: string[]
+  isAnonymous: boolean
+  allowsMultipleAnswers: boolean
+}
 
 @Entity('posts')
 export class Post {
@@ -41,6 +65,24 @@ export class Post {
 
   @Column({ nullable: true, type: 'timestamp' })
   publishedAt!: Date | null
+
+  @Column({ type: 'jsonb', nullable: true })
+  mediaFiles!: MediaFile[] | null
+
+  @Column({ type: 'jsonb', nullable: true })
+  buttons!: PostButton[] | null
+
+  @Column({ type: 'jsonb', nullable: true })
+  poll!: PostPoll | null
+
+  @Column({ default: false })
+  protectContent!: boolean
+
+  @Column({ default: false })
+  pinAfterPublish!: boolean
+
+  @Column({ default: false })
+  disableWebPreview!: boolean
 
   @CreateDateColumn()
   createdAt!: Date

@@ -45,8 +45,8 @@ class StatsCollectorService {
       },
     )
 
-    // Первый сбор через 10 секунд после старта
-    this.queue.add('collect-initial', {}, { delay: 10_000 })
+    // Первый полный сбор (подписчики + реакции) через 15 секунд после старта
+    this.queue.add('collect', {}, { delay: 15_000 })
 
     console.log('[STATS COLLECTOR] Initialized, collecting every hour')
   }

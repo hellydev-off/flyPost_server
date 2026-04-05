@@ -1,5 +1,8 @@
 import TelegramBot from 'node-telegram-bot-api'
+import fs from 'fs'
+import path from 'path'
 import { isMockMode } from '../utils/mockMode'
+import { MediaFile, PostButton, PostPoll } from '../entities/Post'
 
 class TelegramService {
   private bot: TelegramBot | null = null
@@ -23,17 +26,106 @@ class TelegramService {
   async publishPost(
     channelId: string,
     content: string,
+    mediaFiles?: MediaFile[] | null,
+    options?: {
+      buttons?: PostButton[] | null
+      poll?: PostPoll | null
+      protectContent?: boolean
+      pinAfterPublish?: boolean
+      disableWebPreview?: boolean
+    },
   ): Promise<{ messageId: number }> {
     if (isMockMode) {
-      console.log('[MOCK TELEGRAM] Publishing to channel:', channelId)
+      console.log('[MOCK TELEGRAM] Publishing to channel:', channelId, 'media:', mediaFiles?.length ?? 0)
       return { messageId: Math.floor(Math.random() * 100000) }
     }
 
+    const buildKeyboard = (buttons: PostButton[]) => {
+      const rows: any[][] = []
+      for (const btn of buttons) {
+        if (btn.type === 'url') {
+          rows.push([{ text: btn.text, url: btn.url }])
+        } else {
+          const label = btn.clickCount > 0 ? `${btn.text} (${btn.clickCount})` : btn.text
+          rows.push([{ text: label, callback_data: `vote:${btn.id}` }])
+        }
+      }
+      return { inline_keyboard: rows }
+    }
+
+    const replyMarkup = options?.buttons?.length ? buildKeyboard(options.buttons) : undefined
+    const protectContent = options?.protectContent ?? false
+
     try {
-      const msg = await this.getBot().sendMessage(channelId, content, {
-        parse_mode: 'Markdown',
-      })
-      return { messageId: msg.message_id }
+      const bot = this.getBot()
+      const media = mediaFiles?.filter(Boolean) ?? []
+
+      let messageId: number
+
+      if (!media.length) {
+        const msg = await bot.sendMessage(channelId, content, {
+          parse_mode: 'Markdown',
+          protect_content: protectContent,
+          disable_web_page_preview: options?.disableWebPreview ?? false,
+          reply_markup: replyMarkup,
+        } as any)
+        messageId = msg.message_id
+      } else if (media.length > 1) {
+        // Группа медиа
+        const group: TelegramBot.InputMediaPhoto[] = media.map((f, i) => ({
+          type: f.type === 'photo' ? 'photo' : 'video',
+          media: fs.createReadStream(path.join(process.cwd(), 'uploads', path.basename(f.url))) as any,
+          caption: i === 0 ? content : undefined,
+          parse_mode: 'Markdown',
+        } as any))
+
+        const msgs = await bot.sendMediaGroup(channelId, group, {
+          protect_content: protectContent,
+          reply_markup: replyMarkup,
+        } as any)
+        messageId = msgs[0].message_id
+      } else {
+        // Одиночный файл
+        const file = media[0]
+        const filePath = path.join(process.cwd(), 'uploads', path.basename(file.url))
+        const stream = fs.createReadStream(filePath)
+        const opts: any = {
+          caption: content,
+          parse_mode: 'Markdown' as const,
+          protect_content: protectContent,
+          reply_markup: replyMarkup,
+        }
+
+        let msg: TelegramBot.Message
+        if (file.type === 'photo') {
+          msg = await bot.sendPhoto(channelId, stream, opts)
+        } else if (file.type === 'video') {
+          msg = await bot.sendVideo(channelId, stream, opts)
+        } else if (file.type === 'audio') {
+          msg = await bot.sendAudio(channelId, stream, opts)
+        } else {
+          msg = await bot.sendDocument(channelId, stream, opts)
+        }
+        messageId = msg.message_id
+      }
+
+      if (options?.pinAfterPublish) {
+        await bot.pinChatMessage(channelId, messageId, { disable_notification: true }).catch(() => {})
+      }
+
+      if (options?.poll) {
+        await bot.sendPoll(
+          channelId,
+          options.poll.question,
+          options.poll.options,
+          {
+            is_anonymous: options.poll.isAnonymous,
+            allows_multiple_answers: options.poll.allowsMultipleAnswers,
+          } as any,
+        ).catch(() => {})
+      }
+
+      return { messageId }
     } catch (err) {
       console.error('[TELEGRAM] Error sending message:', err)
       throw Object.assign(new Error('Telegram API error'), { statusCode: 500 })

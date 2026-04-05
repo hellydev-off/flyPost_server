@@ -10,6 +10,7 @@ import { AppError } from '../utils/AppError'
 import { isMockMode } from '../utils/mockMode'
 import { telegramService } from './telegram.service'
 import { achievementService } from './achievement.service'
+import { notificationService } from './notification.service'
 
 interface CreateScheduledPostDto {
   postId: string
@@ -67,7 +68,13 @@ class SchedulerService {
     })
 
     try {
-      const { messageId } = await telegramService.publishPost(post.channel.telegramChannelId, post.content)
+      const { messageId } = await telegramService.publishPost(post.channel.telegramChannelId, post.content, post.mediaFiles, {
+        buttons: post.buttons,
+        poll: post.poll,
+        protectContent: post.protectContent,
+        pinAfterPublish: post.pinAfterPublish,
+        disableWebPreview: post.disableWebPreview,
+      })
       post.status = 'published'
       post.publishedAt = new Date()
       post.messageId = messageId
@@ -77,9 +84,22 @@ class SchedulerService {
         scheduledPost.status = 'sent'
         await this.scheduledPostRepo.save(scheduledPost)
       }
+
+      notificationService.notify({
+        userId: post.user?.id ?? (post as any).userId,
+        type: 'post_published',
+        data: { channelTitle: post.channel.title, preview: post.content },
+      }).catch(() => {})
     } catch (err) {
       post.status = 'failed'
       await this.postRepo.save(post)
+
+      notificationService.notify({
+        userId: post.user?.id ?? (post as any).userId,
+        type: 'post_failed',
+        data: { channelTitle: post.channel.title },
+      }).catch(() => {})
+
       throw err
     }
   }
@@ -133,7 +153,24 @@ class SchedulerService {
     })
 
     const saved = await this.scheduledPostRepo.save(scheduledPost)
-    achievementService.checkAndAward(userId).catch(() => {})
+
+    achievementService.checkAndAward(userId).then(awarded => {
+      awarded.forEach(a => notificationService.notifyAchievement(userId, a.type).catch(() => {}))
+    }).catch(() => {})
+
+    // Загружаем channel для уведомления
+    const postWithChannel = await this.postRepo.findOne({ where: { id: postId }, relations: ['channel'] })
+    if (postWithChannel) {
+      notificationService.notify({
+        userId,
+        type: 'post_scheduled',
+        data: {
+          channelTitle: postWithChannel.channel.title,
+          scheduledAt: scheduledAt.toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
+        },
+      }).catch(() => {})
+    }
+
     return saved
   }
 
