@@ -29,10 +29,13 @@ import { schedulerService } from './services/scheduler.service'
 import { statsCollectorService } from './services/statsCollector.service'
 
 function validateEnv(): void {
+  // Поддерживаем оба варианта названия переменной пароля БД
+  const hasDbPass = !!(process.env.DB_PASS || process.env.DB_PASSWORD)
   const required = isMockMode
-    ? ['JWT_SECRET', 'DB_HOST', 'DB_USER', 'DB_PASS', 'DB_NAME']
-    : ['JWT_SECRET', 'DB_HOST', 'DB_USER', 'DB_PASS', 'DB_NAME', 'TELEGRAM_BOT_TOKEN', 'GROK_API_KEY']
+    ? ['JWT_SECRET', 'DB_HOST', 'DB_USER', 'DB_NAME']
+    : ['JWT_SECRET', 'DB_HOST', 'DB_USER', 'DB_NAME', 'TELEGRAM_BOT_TOKEN', 'GROK_API_KEY']
   const missing = required.filter(key => !process.env[key])
+  if (!hasDbPass) missing.push('DB_PASS / DB_PASSWORD')
   if (missing.length) {
     throw new Error(`[APP] Отсутствуют обязательные переменные окружения: ${missing.join(', ')}`)
   }
@@ -75,7 +78,8 @@ const apiLimiter = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => (req as any).user?.userId ?? req.ip ?? 'unknown',
+  // Используем дефолтный keyGenerator чтобы избежать ERR_ERL_KEY_GEN_IPV6
+  validate: { xForwardedForHeader: false },
   message: { message: 'Слишком много запросов. Подождите немного.' },
 })
 
