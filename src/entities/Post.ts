@@ -42,12 +42,18 @@ export class Post {
   @PrimaryGeneratedColumn('uuid')
   id!: string
 
+  @Column({ type: 'uuid' })
+  channelId!: string
+
   @ManyToOne(() => Channel, (c) => c.posts, { onDelete: 'CASCADE' })
-  @JoinColumn()
+  @JoinColumn({ name: 'channelId' })
   channel!: Channel
 
+  @Column({ type: 'uuid' })
+  userId!: string
+
   @ManyToOne(() => User, (u) => u.posts, { onDelete: 'CASCADE' })
-  @JoinColumn()
+  @JoinColumn({ name: 'userId' })
   user!: User
 
   @Column({ type: 'text' })

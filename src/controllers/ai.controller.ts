@@ -130,9 +130,11 @@ export const aiController = {
   },
 
   async weeklyPlan(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { channelId } = req.body as { channelId: string }
+    const { channelId, postsPerDay = 1 } = req.body as { channelId: string; postsPerDay?: number }
     const userId = req.user!.userId
     await subscriptionService.assertFeature(userId, 'weeklyPlan')
+
+    const clampedPostsPerDay = Math.min(Math.max(Number(postsPerDay) || 1, 1), 4)
 
     const channel = await AppDataSource.getRepository(Channel).findOne({
       where: { id: channelId, user: { id: userId } },
@@ -142,7 +144,7 @@ export const aiController = {
     const recentPosts = await AppDataSource.getRepository(Post).find({
       where: { channel: { id: channelId }, status: 'published' },
       order: { publishedAt: 'DESC' },
-      take: 5,
+      take: 10,
       select: ['id', 'content', 'publishedAt'],
     })
 
@@ -151,9 +153,8 @@ export const aiController = {
       .join('\n')
 
     const voiceProfile = await channelProfileService.getByChannelId(channelId)
-    const raw = await grokService.generateWeeklyPlan(channel.title, recentSummary, voiceProfile)
+    const raw = await grokService.generateWeeklyPlan(channel.title, recentSummary, clampedPostsPerDay, voiceProfile)
 
-    // Robustly extract JSON array from AI response (may include markdown, extra text, etc.)
     const ideas = extractJsonArray(raw)
     if (!ideas) throw new AppError('AI вернул некорректный ответ. Попробуйте ещё раз.', 502)
 

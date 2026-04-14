@@ -153,31 +153,57 @@ ${recentPostsSummary || 'Нет данных о прошлых постах'}
     )
   }
 
-  async generateWeeklyPlan(channelTitle: string, recentPostsSummary: string, voiceProfile?: VoiceProfile | null): Promise<string> {
+  async generateWeeklyPlan(channelTitle: string, recentPostsSummary: string, postsPerDay: number, voiceProfile?: VoiceProfile | null): Promise<string> {
+    const totalPosts = 7 * postsPerDay
+
     if (isMockMode) {
       await new Promise((resolve) => setTimeout(resolve, 600))
-      return JSON.stringify([
-        { title: 'Тренды недели', summary: 'Обзор главных событий в нише за прошедшую неделю.', suggestedHour: 9 },
-        { title: 'Экспертный разбор', summary: 'Подробный анализ актуальной темы с практическими советами.', suggestedHour: 19 },
-        { title: 'Кейс из практики', summary: 'Реальная история успеха или провала с выводами.', suggestedHour: 12 },
-        { title: 'Инструменты и лайфхаки', summary: 'Полезные инструменты, которые экономят время.', suggestedHour: 18 },
-        { title: 'Вопрос–ответ', summary: 'Отвечаем на частые вопросы подписчиков.', suggestedHour: 20 },
-      ])
+      const mockTitles = [
+        'Тренды недели', 'Экспертный разбор', 'Кейс из практики',
+        'Инструменты и лайфхаки', 'Вопрос–ответ', 'Разбор ошибок',
+        'Закулисье канала', 'Подборка ресурсов', 'Мнение эксперта',
+        'Практические советы', 'История успеха', 'Новости ниши',
+        'Чек-лист', 'Топ-5 идей', 'Разбор кейса',
+        'Лайфхаки', 'Аналитика', 'Советы новичкам',
+        'Обзор инструментов', 'Итоги недели', 'Прогнозы',
+        'Мотивация', 'Разбор тренда', 'Вовлечение аудитории',
+        'Полезный контент', 'Опрос читателей', 'Подводим итоги',
+        'Планы на неделю',
+      ]
+      const hours = [9, 12, 15, 18]
+      const ideas = []
+      for (let day = 0; day < 7; day++) {
+        for (let p = 0; p < postsPerDay; p++) {
+          const idx = day * postsPerDay + p
+          ideas.push({
+            dayIndex: day,
+            title: mockTitles[idx % mockTitles.length],
+            summary: 'Краткое описание темы поста для планирования контента на неделю.',
+            suggestedHour: hours[p % hours.length],
+          })
+        }
+      }
+      return JSON.stringify(ideas)
     }
 
     const voiceSection = buildVoiceSection(voiceProfile)
 
     return this.callGrok(
       `Ты контент-стратег для Telegram-каналов. Отвечай ТОЛЬКО валидным JSON без markdown-обёртки.${voiceSection}`,
-      `Создай план из 5-7 постов для Telegram-канала "${channelTitle}" на следующую неделю.
+      `Создай план из ${totalPosts} постов для Telegram-канала "${channelTitle}" на следующие 7 дней (Пн–Вс).
+
+Количество постов в день: ${postsPerDay}
 
 Последние посты канала (для понимания стиля):
 ${recentPostsSummary || 'Нет данных о прошлых постах'}
 
-Верни JSON-массив:
-[{"title":"Заголовок идеи","summary":"1-2 предложения о чём пост","suggestedHour":19}]
+Верни JSON-массив ровно из ${totalPosts} объектов — по ${postsPerDay} для каждого дня (dayIndex 0=Пн, 1=Вт, ..., 6=Вс):
+[{"dayIndex":0,"title":"Заголовок идеи","summary":"1-2 предложения о чём пост","suggestedHour":9}]
 
-suggestedHour — лучший час публикации (0-23). Распредели посты по разным дням и временам.`,
+Правила:
+- dayIndex строго 0–6, по ${postsPerDay} записей на каждый dayIndex
+- suggestedHour — лучший час публикации (7–22), равномерно распредели посты в течение дня
+- Темы должны быть разнообразными и соответствовать нише канала`,
     )
   }
 
