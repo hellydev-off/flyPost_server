@@ -45,14 +45,15 @@ const app = express()
 const PORT = process.env.PORT || 3000
 
 // --- Middleware ---
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173').split(',').map(o => o.trim())
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,https://app.neo-post.ru').split(',').map(o => o.trim())
 app.use(cors({
   origin: (origin, callback) => {
     // Разрешаем запросы без origin (мобильные, Postman, server-to-server) и из allowed list
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true)
     } else {
-      callback(new Error(`CORS: origin ${origin} not allowed`))
+      // callback(null, false) — правильный способ отклонить, не бросать ошибку
+      callback(null, false)
     }
   },
   credentials: true,
