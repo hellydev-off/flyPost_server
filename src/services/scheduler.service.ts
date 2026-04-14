@@ -89,7 +89,9 @@ class SchedulerService {
         userId: post.user?.id ?? (post as any).userId,
         type: 'post_published',
         data: { channelTitle: post.channel.title, preview: post.content },
-      }).catch(() => {})
+      }).catch(err => {
+        console.error(`[SCHEDULER] notify post_published failed for post ${postId}:`, err)
+      })
     } catch (err) {
       post.status = 'failed'
       await this.postRepo.save(post)
@@ -98,7 +100,9 @@ class SchedulerService {
         userId: post.user?.id ?? (post as any).userId,
         type: 'post_failed',
         data: { channelTitle: post.channel.title },
-      }).catch(() => {})
+      }).catch(notifyErr => {
+        console.error(`[SCHEDULER] notify post_failed failed for post ${postId}:`, notifyErr)
+      })
 
       throw err
     }
@@ -155,8 +159,12 @@ class SchedulerService {
     const saved = await this.scheduledPostRepo.save(scheduledPost)
 
     achievementService.checkAndAward(userId).then(awarded => {
-      awarded.forEach(a => notificationService.notifyAchievement(userId, a.type).catch(() => {}))
-    }).catch(() => {})
+      awarded.forEach(a => notificationService.notifyAchievement(userId, a.type).catch(err => {
+        console.error(`[SCHEDULER] notifyAchievement failed for user ${userId}:`, err)
+      }))
+    }).catch(err => {
+      console.error(`[SCHEDULER] checkAndAward failed for user ${userId}:`, err)
+    })
 
     // Загружаем channel для уведомления
     const postWithChannel = await this.postRepo.findOne({ where: { id: postId }, relations: ['channel'] })
@@ -168,7 +176,9 @@ class SchedulerService {
           channelTitle: postWithChannel.channel.title,
           scheduledAt: scheduledAt.toLocaleString('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
         },
-      }).catch(() => {})
+      }).catch(err => {
+        console.error(`[SCHEDULER] notify post_scheduled failed for user ${userId}:`, err)
+      })
     }
 
     return saved

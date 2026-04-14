@@ -5,6 +5,7 @@ import 'express-async-errors'
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
 
 import { AppDataSource } from './config/database'
 import { errorMiddleware } from './middleware/error.middleware'
@@ -27,12 +28,30 @@ import adminRoutes from './routes/admin.routes'
 import { schedulerService } from './services/scheduler.service'
 import { statsCollectorService } from './services/statsCollector.service'
 
+function validateEnv(): void {
+  const required = isMockMode
+    ? ['JWT_SECRET', 'DB_HOST', 'DB_USER', 'DB_PASS', 'DB_NAME']
+    : ['JWT_SECRET', 'DB_HOST', 'DB_USER', 'DB_PASS', 'DB_NAME', 'TELEGRAM_BOT_TOKEN', 'GROK_API_KEY']
+  const missing = required.filter(key => !process.env[key])
+  if (missing.length) {
+    throw new Error(`[APP] Отсутствуют обязательные переменные окружения: ${missing.join(', ')}`)
+  }
+}
+
 const app = express()
 const PORT = process.env.PORT || 3000
 
 // --- Middleware ---
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173').split(',').map(o => o.trim())
 app.use(cors({
-  origin: true,
+  origin: (origin, callback) => {
+    // Разрешаем запросы без origin (мобильные, Postman, server-to-server) и из allowed list
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true)
+    } else {
+      callback(new Error(`CORS: origin ${origin} not allowed`))
+    }
+  },
   credentials: true,
 }))
 app.use(helmet({
@@ -41,6 +60,27 @@ app.use(helmet({
 app.use(express.json())
 app.use('/uploads', express.static('uploads'))
 app.use(loggerMiddleware)
+
+// --- Rate limiting ---
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 минут
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Слишком много запросов. Попробуйте через 15 минут.' },
+})
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 минута
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req as any).user?.userId ?? req.ip ?? 'unknown',
+  message: { message: 'Слишком много запросов. Подождите немного.' },
+})
+
+app.use('/api/auth', authLimiter)
+app.use('/api/', apiLimiter)
 
 // --- Routes ---
 app.use('/api/auth', authRoutes)
@@ -61,6 +101,8 @@ app.use(errorMiddleware)
 
 // --- Bootstrap ---
 async function bootstrap(): Promise<void> {
+  validateEnv()
+
   await AppDataSource.initialize()
   console.log('[DB] PostgreSQL connected')
 

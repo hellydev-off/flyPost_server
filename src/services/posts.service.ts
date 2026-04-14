@@ -81,7 +81,9 @@ class PostsService {
     })
 
     const saved = await this.postRepo.save(post)
-    achievementService.checkAndAward(userId).catch(() => {})
+    achievementService.checkAndAward(userId).catch(err => {
+      console.error(`[POSTS] checkAndAward failed for user ${userId}:`, err)
+    })
     return saved
   }
 
@@ -130,18 +132,37 @@ class PostsService {
         disableWebPreview: post.disableWebPreview,
       })
       messageId = result.messageId
-    } catch {
-      throw new AppError('Telegram API error', 500)
+    } catch (err) {
+      console.error(`[POSTS] Telegram publish failed for post ${postId}:`, err)
+      throw new AppError('Ошибка публикации в Telegram', 500)
     }
 
     post.status = 'published'
     post.publishedAt = new Date()
     post.messageId = messageId
-    const saved = await this.postRepo.save(post)
+
+    let saved: Post
+    try {
+      saved = await this.postRepo.save(post)
+    } catch (saveErr) {
+      console.error(`[POSTS] DB save failed after Telegram publish (post ${postId}), retrying...`, saveErr)
+      try {
+        saved = await this.postRepo.save(post)
+      } catch (retryErr) {
+        console.error(`[POSTS] Retry failed. Post ${postId} published in Telegram but DB save failed.`, retryErr)
+        // Ставим failed чтобы пользователь не мог опубликовать повторно и не было дубля
+        await this.postRepo.update(postId, { status: 'failed' }).catch(() => {})
+        throw new AppError('Пост опубликован в Telegram, но произошла ошибка сохранения. Обратитесь в поддержку.', 500)
+      }
+    }
 
     achievementService.checkAndAward(userId).then(awarded => {
-      awarded.forEach(a => notificationService.notifyAchievement(userId, a.type).catch(() => {}))
-    }).catch(() => {})
+      awarded.forEach(a => notificationService.notifyAchievement(userId, a.type).catch(err => {
+        console.error(`[POSTS] notifyAchievement failed for user ${userId}:`, err)
+      }))
+    }).catch(err => {
+      console.error(`[POSTS] checkAndAward failed for user ${userId}:`, err)
+    })
 
     notificationService.notify({
       userId,
@@ -150,7 +171,9 @@ class PostsService {
         channelTitle: post.channel.title,
         preview: post.content,
       },
-    }).catch(() => {})
+    }).catch(err => {
+      console.error(`[POSTS] notify post_published failed for user ${userId}:`, err)
+    })
 
     return saved
   }
@@ -199,8 +222,11 @@ class PostsService {
           userId,
           type: 'post_published',
           data: { channelTitle: fullPost.channel.title, preview: fullPost.content },
-        }).catch(() => {})
-      } catch {
+        }).catch(err => {
+          console.error(`[POSTS] crossPost notify failed for channel ${channelId}:`, err)
+        })
+      } catch (err) {
+        console.error(`[POSTS] crossPost failed for channel ${channelId}:`, err)
         saved.status = 'failed'
         await this.postRepo.save(saved)
         results.push(saved)
@@ -208,8 +234,12 @@ class PostsService {
     }
 
     achievementService.checkAndAward(userId).then(awarded => {
-      awarded.forEach(a => notificationService.notifyAchievement(userId, a.type).catch(() => {}))
-    }).catch(() => {})
+      awarded.forEach(a => notificationService.notifyAchievement(userId, a.type).catch(err => {
+        console.error(`[POSTS] notifyAchievement failed for user ${userId}:`, err)
+      }))
+    }).catch(err => {
+      console.error(`[POSTS] checkAndAward failed for user ${userId}:`, err)
+    })
 
     return results
   }

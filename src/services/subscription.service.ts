@@ -203,15 +203,19 @@ class SubscriptionService {
     }
   }
 
-  /** Increment AI usage counter for current month */
+  /** Increment AI usage counter for current month (атомарно, без race condition) */
   async incrementAiUsage(userId: string): Promise<void> {
     const month = currentMonth()
-    let log = await this.usageRepo.findOne({ where: { userId, month } })
-    if (!log) {
-      log = this.usageRepo.create({ userId, month, aiGenerations: 0 })
-    }
-    log.aiGenerations += 1
-    await this.usageRepo.save(log).catch(() => {/* race condition on unique constraint — ignore */})
+    // Сначала создаём строку если её нет (ON CONFLICT DO NOTHING)
+    await this.usageRepo
+      .createQueryBuilder()
+      .insert()
+      .into(UsageLog)
+      .values({ userId, month, aiGenerations: 0 })
+      .orIgnore()
+      .execute()
+    // Атомарный UPDATE SET field = field + 1
+    await this.usageRepo.increment({ userId, month }, 'aiGenerations', 1)
   }
 
   /** YooKassa stub — returns a mock payment URL */
