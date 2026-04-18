@@ -29,4 +29,15 @@ export const profileController = {
     const stats = await profileService.getUserStats(req.user!.userId)
     res.json(stats)
   },
+
+  async getPhoto(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const buffer = await profileService.getPhotoBuffer(req.user!.userId)
+      res.setHeader('Content-Type', 'image/jpeg')
+      res.setHeader('Cache-Control', 'private, max-age=3600')
+      res.end(buffer)
+    } catch {
+      res.status(404).json({ error: 'Фото не найдено' })
+    }
+  },
 }
