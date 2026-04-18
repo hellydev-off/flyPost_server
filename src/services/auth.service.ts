@@ -5,6 +5,7 @@ import { User } from '../entities/User'
 import { AppError } from '../utils/AppError'
 import { validateTelegramData } from '../utils/validateTelegramData'
 import { subscriptionService } from './subscription.service'
+import { auditService } from './audit.service'
 
 interface AuthResult {
   token: string
@@ -61,6 +62,7 @@ class AuthService {
     await this.userRepo.save(user)
     // Init 14-day trial subscription (fire-and-forget)
     subscriptionService.getOrCreate(user.id).catch(() => {})
+    auditService.notifyNewUser({ id: user.id, email: user.email, username: user.username, firstName: user.firstName, via: 'email' })
 
     return this.toResult(user, this.signToken(user.id))
   }
@@ -102,6 +104,7 @@ class AuthService {
       })
       await this.userRepo.save(user)
       subscriptionService.getOrCreate(user.id).catch(() => {})
+      auditService.notifyNewUser({ id: user.id, email: null, username: user.username, firstName: user.firstName, via: 'telegram' })
     } else {
       user.firstName = tgUser.first_name
       if (tgUser.username !== undefined) user.username = tgUser.username ?? null

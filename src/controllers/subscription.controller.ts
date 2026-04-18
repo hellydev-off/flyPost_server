@@ -17,7 +17,23 @@ export const subscriptionController = {
     res.json(result)
   },
 
-  /** Stub webhook / manual confirm for dev purposes */
+  /** Webhook от ЮKassa — без авторизации, верификация через повторный запрос к API ЮKassa */
+  async yookassaWebhook(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const body = req.body as {
+      type?: string
+      object?: { id?: string }
+    }
+
+    // ЮKassa шлёт события типа payment.succeeded, payment.canceled и т.д.
+    if (body.type === 'notification' && body.object?.id) {
+      await subscriptionService.handleYookassaWebhook(body.object.id)
+    }
+
+    // Всегда отвечаем 200 — иначе ЮKassa будет повторять запросы
+    res.sendStatus(200)
+  },
+
+  /** Stub: ручное подтверждение для dev/mock-режима */
   async confirmPayment(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { plan, months } = req.body as {
       plan: Exclude<PlanKey, 'free'>

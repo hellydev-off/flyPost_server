@@ -1,10 +1,15 @@
 import { AppDataSource } from '../config/database'
 import { UserSubscription, PlanKey } from '../entities/UserSubscription'
+import { Payment } from '../entities/Payment'
 import { UsageLog } from '../entities/UsageLog'
 import { ScheduledPost } from '../entities/ScheduledPost'
 import { Template } from '../entities/Template'
 import { Channel } from '../entities/Channel'
 import { AppError } from '../utils/AppError'
+import { yookassaService } from './yookassa.service'
+import { isMockMode } from '../utils/mockMode'
+import { auditService } from './audit.service'
+import { User } from '../entities/User'
 
 export interface PlanLimits {
   channels: number             // -1 = unlimited
@@ -62,6 +67,14 @@ export const PLAN_LIMITS: Record<PlanKey, PlanLimits> = {
 
 const TRIAL_DAYS = 14
 
+/** Цены в рублях (должны совпадать с frontend/src/types/plan.types.ts PLAN_PRICES) */
+// TODO: вернуть реальные цены после тестирования оплаты
+const PRICES: Record<Exclude<PlanKey, 'free'>, Record<number, number>> = {
+  start: { 1: 1, 3: 1, 6: 1, 12: 1 },
+  pro:   { 1: 1, 3: 1, 6: 1, 12: 1 },
+  max:   { 1: 1, 3: 1, 6: 1, 12: 1 },
+}
+
 function currentMonth(): string {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -73,6 +86,7 @@ class SubscriptionService {
   private get scheduledRepo() { return AppDataSource.getRepository(ScheduledPost) }
   private get templateRepo() { return AppDataSource.getRepository(Template) }
   private get channelRepo() { return AppDataSource.getRepository(Channel) }
+  private get paymentRepo() { return AppDataSource.getRepository(Payment) }
 
   /** Get or create subscription. New users get a 14-day max trial. */
   async getOrCreate(userId: string): Promise<UserSubscription> {
@@ -218,16 +232,97 @@ class SubscriptionService {
     await this.usageRepo.increment({ userId, month }, 'aiGenerations', 1)
   }
 
-  /** YooKassa stub — returns a mock payment URL */
   async initPayment(userId: string, plan: Exclude<PlanKey, 'free'>, months: 1 | 3 | 6 | 12) {
-    // In real implementation: call YooKassa API, save order, return redirect URL
-    const orderId = `order_${userId.slice(0, 8)}_${Date.now()}`
-    return {
-      orderId,
-      paymentUrl: `https://yookassa.ru/checkout/payments/${orderId}`, // stub
+    const amount = PRICES[plan][months]
+
+    if (isMockMode) {
+      return {
+        paymentId: `mock_${Date.now()}`,
+        paymentUrl: '#mock',
+        plan,
+        months,
+        amount,
+      }
+    }
+
+    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173'
+    const returnUrl = `${frontendUrl}/pricing?payment=success`
+
+    const planNames: Record<Exclude<PlanKey, 'free'>, string> = {
+      start: 'Старт',
+      pro: 'Про',
+      max: 'Максимум',
+    }
+    const description = `Подписка Neo Post «${planNames[plan]}» на ${months} мес.`
+
+    // Создаём запись в БД заранее — её id используется как idempotency key
+    const payment = this.paymentRepo.create({
+      userId,
+      yookassaPaymentId: 'pending',
       plan,
       months,
+      amount,
+      status: 'pending',
+    })
+    await this.paymentRepo.save(payment)
+
+    try {
+      const ykPayment = await yookassaService.createPayment({
+        amount,
+        description,
+        returnUrl,
+        idempotencyKey: payment.id,
+        metadata: { paymentId: payment.id, userId, plan, months: String(months) },
+      })
+
+      payment.yookassaPaymentId = ykPayment.id
+      await this.paymentRepo.save(payment)
+
+      return {
+        paymentId: payment.id,
+        paymentUrl: ykPayment.confirmation.confirmation_url,
+        plan,
+        months,
+        amount,
+      }
+    } catch (err) {
+      // Если не удалось создать платёж — удаляем запись из БД
+      await this.paymentRepo.remove(payment)
+      throw err
     }
+  }
+
+  /** Обработка вебхука от ЮKassa: верифицируем платёж и активируем план */
+  async handleYookassaWebhook(yookassaPaymentId: string): Promise<void> {
+    // Перепроверяем статус напрямую через API ЮKassa (не доверяем payload вебхука)
+    const ykPayment = await yookassaService.getPayment(yookassaPaymentId)
+
+    if (ykPayment.status !== 'succeeded') return
+
+    const payment = await this.paymentRepo.findOne({ where: { yookassaPaymentId } })
+    if (!payment || payment.status === 'succeeded') return
+
+    payment.status = 'succeeded'
+    await this.paymentRepo.save(payment)
+
+    await this.activatePlan(payment.userId, payment.plan as Exclude<PlanKey, 'free'>, payment.months)
+
+    // Audit notification (fire-and-forget)
+    AppDataSource.getRepository(User)
+      .findOne({ where: { id: payment.userId } })
+      .then(user => {
+        if (user) {
+          auditService.notifyNewPayment({
+            userId: payment.userId,
+            email: user.email,
+            firstName: user.firstName,
+            plan: payment.plan,
+            months: payment.months,
+            amount: payment.amount,
+          })
+        }
+      })
+      .catch(() => {})
   }
 
   /** Downgrade to free — clears paid subscription and trial */

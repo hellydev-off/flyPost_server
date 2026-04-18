@@ -62,8 +62,9 @@ class PostsService {
   async createPost(userId: string, dto: CreatePostDto): Promise<Post> {
     this.validateContent(dto.content)
 
-    const channel = new Channel()
-    channel.id = dto.channelId
+    const channelRepo = AppDataSource.getRepository(Channel)
+    const channel = await channelRepo.findOne({ where: { id: dto.channelId, user: { id: userId } } })
+    if (!channel) throw new AppError('Channel not found', 404)
 
     const user = new User()
     user.id = userId
@@ -120,6 +121,9 @@ class PostsService {
     }
     if (post.status === 'published') {
       throw new AppError('Post already published', 400)
+    }
+    if (post.status === 'scheduled') {
+      throw new AppError('Post is scheduled — cancel the schedule before publishing manually', 400)
     }
 
     let messageId: number | null = null
@@ -184,13 +188,15 @@ class PostsService {
 
     const source = await this.getPostById(postId, userId)
 
+    const channelRepo = AppDataSource.getRepository(Channel)
     const results: Post[] = []
 
     for (const channelId of channelIds) {
       if (channelId === source.channel.id) continue  // пропускаем исходный канал
 
-      const channel = new Channel()
-      channel.id = channelId
+      const channel = await channelRepo.findOne({ where: { id: channelId, user: { id: userId } } })
+      if (!channel) continue  // пропускаем чужие / несуществующие каналы
+
       const user = new User()
       user.id = userId
 

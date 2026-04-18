@@ -13,6 +13,7 @@ import { UserSubscription } from '../entities/UserSubscription'
 import { UsageLog } from '../entities/UsageLog'
 import { AiPlan } from '../entities/AiPlan'
 import { ActionLog } from '../entities/ActionLog'
+import { Payment } from '../entities/Payment'
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -23,6 +24,6 @@ export const AppDataSource = new DataSource({
   database: process.env.DB_NAME || 'neopost',
   synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV === 'development',
-  entities: [User, Channel, Post, ScheduledPost, Competitor, ChannelStatsHistory, Template, ChannelProfile, UserAchievement, UserSubscription, UsageLog, AiPlan, ActionLog],
+  entities: [User, Channel, Post, ScheduledPost, Competitor, ChannelStatsHistory, Template, ChannelProfile, UserAchievement, UserSubscription, UsageLog, AiPlan, ActionLog, Payment],
   migrations: ['dist/migrations/**/*.js'],
 })

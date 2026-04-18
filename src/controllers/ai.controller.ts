@@ -51,6 +51,8 @@ export const aiController = {
   async generate(req: Request, res: Response, next: NextFunction): Promise<void> {
     const userId = req.user!.userId
     await subscriptionService.assertAiLimit(userId)
+    // Инкремент ДО вызова AI: второй параллельный запрос увидит обновлённый счётчик
+    await subscriptionService.incrementAiUsage(userId)
     const { topic, tone, length, channelId } = req.body as {
       topic: string
       tone: string
@@ -63,13 +65,13 @@ export const aiController = {
       : null
 
     const content = await grokService.generateContent({ topic, tone, length, voiceProfile })
-    subscriptionService.incrementAiUsage(userId).catch(() => {})
     res.json({ content })
   },
 
   async improve(req: Request, res: Response, next: NextFunction): Promise<void> {
     const userId = req.user!.userId
     await subscriptionService.assertAiLimit(userId)
+    await subscriptionService.incrementAiUsage(userId)
     const { content, action, tone, channelId } = req.body as {
       content: string
       action: 'shorten' | 'expand' | 'rephrase' | 'fix' | 'tone'
@@ -82,7 +84,6 @@ export const aiController = {
       : null
 
     const result = await grokService.improveContent({ content, action, tone, voiceProfile })
-    subscriptionService.incrementAiUsage(userId).catch(() => {})
     res.json({ content: result })
   },
 
@@ -94,6 +95,7 @@ export const aiController = {
     }
     const userId = req.user!.userId
     await subscriptionService.assertFeature(userId, 'weeklyPlan')
+    await subscriptionService.assertAiLimit(userId)
 
     const channel = await AppDataSource.getRepository(Channel).findOne({
       where: { id: channelId, user: { id: userId } },
@@ -117,6 +119,7 @@ export const aiController = {
 
     const timeSlots = buildTimeSlots(startHour, intervalMinutes)
     const voiceProfile = await channelProfileService.getByChannelId(channelId)
+    await subscriptionService.incrementAiUsage(userId)
     const raw = await grokService.generateDailyPlan(channel.title, timeSlots, recentSummary, voiceProfile)
 
     const ideas = extractJsonArray(raw)
@@ -133,6 +136,7 @@ export const aiController = {
     const { channelId, postsPerDay = 1 } = req.body as { channelId: string; postsPerDay?: number }
     const userId = req.user!.userId
     await subscriptionService.assertFeature(userId, 'weeklyPlan')
+    await subscriptionService.assertAiLimit(userId)
 
     const clampedPostsPerDay = Math.min(Math.max(Number(postsPerDay) || 1, 1), 4)
 
@@ -153,6 +157,7 @@ export const aiController = {
       .join('\n')
 
     const voiceProfile = await channelProfileService.getByChannelId(channelId)
+    await subscriptionService.incrementAiUsage(userId)
     const raw = await grokService.generateWeeklyPlan(channel.title, recentSummary, clampedPostsPerDay, voiceProfile)
 
     const ideas = extractJsonArray(raw)
