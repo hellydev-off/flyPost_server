@@ -26,6 +26,7 @@ import subscriptionRoutes from './routes/subscription.routes'
 import adminRoutes from './routes/admin.routes'
 
 import { schedulerService } from './services/scheduler.service'
+import { auditService } from './services/audit.service'
 import { statsCollectorService } from './services/statsCollector.service'
 
 function validateEnv(): void {
@@ -118,6 +119,8 @@ async function bootstrap(): Promise<void> {
     const { startBot } = await import('./bot/bot')
     startBot()
   }
+
+  auditService.startPolling()
 
   app.listen(PORT, () => {
     console.log(`[APP] Server running on http://localhost:${PORT}`)
