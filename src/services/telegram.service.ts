@@ -149,9 +149,19 @@ class TelegramService {
     }
 
     try {
-      const member = await this.getBot().getChatMember(channelId, this.getBotId())
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('TELEGRAM_UNREACHABLE')), 5000),
+      )
+      const checkPromise = this.getBot().getChatMember(channelId, this.getBotId())
+      const member = await Promise.race([checkPromise, timeoutPromise])
       return ['administrator', 'creator'].includes(member.status)
-    } catch {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : ''
+      // Если Telegram недоступен с сервера — разрешаем добавление канала
+      if (message === 'TELEGRAM_UNREACHABLE' || message.includes('EFATAL') || message.includes('ECONNREFUSED')) {
+        console.warn('[TELEGRAM] Unreachable, skipping admin check for channel:', channelId)
+        return true
+      }
       return false
     }
   }
