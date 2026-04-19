@@ -133,7 +133,7 @@ class AuditService {
       await fetch(`https://api.telegram.org/bot${getToken()}/deleteWebhook?drop_pending_updates=true`)
     } catch { /* ignore */ }
 
-    this.bot = new TelegramBot(getToken(), { polling: { interval: 2000, timeout: 10 } })
+    this.bot = new TelegramBot(getToken(), { polling: { interval: 2000 } })
 
     this.bot.onText(/\/start|\/stats/, async (msg) => {
       if (String(msg.chat.id) !== getChatId()) return
