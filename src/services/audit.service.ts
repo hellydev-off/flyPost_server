@@ -123,28 +123,43 @@ async function buildStatsMessage(): Promise<string> {
 }
 
 class AuditService {
-  startPolling(): void {
+  private bot: TelegramBot | null = null
+
+  async startPolling(): Promise<void> {
     if (!isConfigured()) return
 
-    const bot = new TelegramBot(getToken(), { polling: true })
+    // Сбрасываем предыдущий инстанс чтобы избежать 409 Conflict
+    try {
+      await fetch(`https://api.telegram.org/bot${getToken()}/deleteWebhook?drop_pending_updates=true`)
+    } catch { /* ignore */ }
 
-    bot.onText(/\/start|\/stats/, async (msg) => {
-      // Отвечаем только владельцу
+    this.bot = new TelegramBot(getToken(), { polling: { interval: 2000, timeout: 10 } })
+
+    this.bot.onText(/\/start|\/stats/, async (msg) => {
       if (String(msg.chat.id) !== getChatId()) return
-
       try {
-        await bot.sendChatAction(msg.chat.id, 'typing')
+        await this.bot!.sendChatAction(msg.chat.id, 'typing')
         const text = await buildStatsMessage()
-        await bot.sendMessage(msg.chat.id, text, { parse_mode: 'HTML' })
+        await this.bot!.sendMessage(msg.chat.id, text, { parse_mode: 'HTML' })
       } catch (err) {
         console.error('[AUDIT] /start stats error:', err)
-        await bot.sendMessage(msg.chat.id, '❌ Не удалось получить статистику').catch(() => {})
+        await this.bot!.sendMessage(msg.chat.id, '❌ Не удалось получить статистику').catch(() => {})
       }
     })
 
-    bot.on('polling_error', (err) => {
-      console.error('[AUDIT BOT] Polling error:', err.message)
+    this.bot.on('polling_error', (err: Error & { code?: string }) => {
+      // 409 — нормально при рестарте, не шумим
+      if (!err.message.includes('409')) {
+        console.error('[AUDIT BOT] Polling error:', err.message)
+      }
     })
+
+    // Graceful shutdown
+    const stop = async () => {
+      await this.bot?.stopPolling().catch(() => {})
+    }
+    process.once('SIGTERM', stop)
+    process.once('SIGINT', stop)
 
     console.log('[AUDIT BOT] Started')
   }

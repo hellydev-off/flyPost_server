@@ -5,6 +5,7 @@ import 'express-async-errors'
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
+import compression from 'compression'
 import rateLimit from 'express-rate-limit'
 
 import { AppDataSource } from './config/database'
@@ -44,6 +45,7 @@ function validateEnv(): void {
 
 const app = express()
 app.set('trust proxy', 1)   // nginx reverse proxy
+app.use(compression())
 const PORT = process.env.PORT || 3000
 
 // --- Middleware ---
@@ -121,7 +123,7 @@ async function bootstrap(): Promise<void> {
     startBot()
   }
 
-  auditService.startPolling()
+  auditService.startPolling().catch(err => console.error('[AUDIT] start error:', err))
 
   app.listen(PORT, () => {
     console.log(`[APP] Server running on http://localhost:${PORT}`)
