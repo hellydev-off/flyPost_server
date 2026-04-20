@@ -1,6 +1,7 @@
 /**
- * Audit Bot — мониторинг сервера и проекта через inline-кнопки.
- * Env vars: AUDIT_BOT_TOKEN, AUDIT_CHAT_ID
+ * Audit Bot — полный мониторинг NeoPost через Telegram.
+ * Команды: /start /stats /users /plans /revenue /activity /server /help
+ * Env: AUDIT_BOT_TOKEN, AUDIT_CHAT_ID
  */
 
 import os from 'os'
@@ -13,45 +14,93 @@ import { UserSubscription } from '../entities/UserSubscription'
 import { UsageLog } from '../entities/UsageLog'
 import { Payment } from '../entities/Payment'
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function getToken(): string  { return process.env.AUDIT_BOT_TOKEN ?? '' }
 function getChatId(): string { return process.env.AUDIT_CHAT_ID   ?? '' }
 function isConfigured(): boolean { return !!(getToken() && getChatId()) }
-function isOwner(chatId: number | string): boolean { return String(chatId) === getChatId() }
+function isOwner(id: number | string): boolean { return String(id) === getChatId() }
 
-// ─── Секции данных ────────────────────────────────────────────────────────────
+function bar(value: number, max: number, len = 10): string {
+  const filled = max > 0 ? Math.round((value / max) * len) : 0
+  return '█'.repeat(filled) + '░'.repeat(len - filled)
+}
 
-async function buildUsersSection(): Promise<string> {
-  const now        = new Date()
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+function pct(value: number, total: number): string {
+  return total > 0 ? `${Math.round(value / total * 100)}%` : '0%'
+}
+
+function trend(current: number, prev: number): string {
+  if (current > prev) return '↑'
+  if (current < prev) return '↓'
+  return '→'
+}
+
+function rub(value: number): string {
+  return value.toLocaleString('ru-RU') + ' ₽'
+}
+
+function mb(bytes: number): string {
+  return (bytes / 1024 / 1024).toFixed(0) + ' MB'
+}
+
+function now(): string {
+  return new Date().toLocaleString('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  }) + ' МСК'
+}
+
+// ─── Разделы ─────────────────────────────────────────────────────────────────
+
+async function sectionUsers(): Promise<string> {
+  const repo       = AppDataSource.getRepository(User)
+  const n          = new Date()
+  const todayStart = new Date(n.getFullYear(), n.getMonth(), n.getDate())
   const weekStart  = new Date(todayStart); weekStart.setDate(weekStart.getDate() - 7)
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const monthStart = new Date(n.getFullYear(), n.getMonth(), 1)
+  const prevMonth  = new Date(n.getFullYear(), n.getMonth() - 1, 1)
+  const prevMonthEnd = new Date(n.getFullYear(), n.getMonth(), 1)
 
-  const repo = AppDataSource.getRepository(User)
-  const [total, today, week, month] = await Promise.all([
+  const [total, today, week, month, prevMonthCount, tg, email] = await Promise.all([
     repo.count(),
     repo.createQueryBuilder('u').where('u.createdAt >= :d', { d: todayStart }).getCount(),
     repo.createQueryBuilder('u').where('u.createdAt >= :d', { d: weekStart }).getCount(),
     repo.createQueryBuilder('u').where('u.createdAt >= :d', { d: monthStart }).getCount(),
+    repo.createQueryBuilder('u')
+      .where('u.createdAt >= :a', { a: prevMonth })
+      .andWhere('u.createdAt < :b', { b: prevMonthEnd })
+      .getCount(),
+    repo.createQueryBuilder('u').where('u.telegramId IS NOT NULL').getCount(),
+    repo.createQueryBuilder('u').where('u.email IS NOT NULL').getCount(),
   ])
 
-  const tgUsers = await repo.createQueryBuilder('u')
-    .where('u.telegramId IS NOT NULL').getCount()
+  const trendMonth = trend(month, prevMonthCount)
 
   return (
-    `👥 <b>Пользователи</b>\n\n` +
-    `Всего: <b>${total}</b>\n` +
-    `  • Через Telegram: ${tgUsers}\n` +
-    `  • Через Email: ${total - tgUsers}\n\n` +
-    `Прирост:\n` +
-    `  • Сегодня: <b>+${today}</b>\n` +
-    `  • За неделю: <b>+${week}</b>\n` +
-    `  • За месяц: <b>+${month}</b>`
+    `👥 <b>ПОЛЬЗОВАТЕЛИ</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+
+    `📊 Всего зарегистрировано: <b>${total}</b>\n\n` +
+
+    `📥 Прирост:\n` +
+    `  Сегодня:    <b>+${today}</b>\n` +
+    `  Неделя:     <b>+${week}</b>\n` +
+    `  Месяц:      <b>+${month}</b> ${trendMonth} (пред. +${prevMonthCount})\n\n` +
+
+    `🔗 Способ входа:\n` +
+    `  Telegram: ${tg}  ${bar(tg, total)}  ${pct(tg, total)}\n` +
+    `  Email:    ${email}  ${bar(email, total)}  ${pct(email, total)}\n\n` +
+
+    `🕐 <i>${now()}</i>`
   )
 }
 
-async function buildPlansSection(): Promise<string> {
-  const now   = new Date()
+async function sectionPlans(): Promise<string> {
   const subRepo = AppDataSource.getRepository(UserSubscription)
+  const userRepo = AppDataSource.getRepository(User)
+  const n = new Date()
 
   const planRows = await subRepo
     .createQueryBuilder('s')
@@ -63,160 +112,245 @@ async function buildPlansSection(): Promise<string> {
   const plans: Record<string, number> = { free: 0, start: 0, pro: 0, max: 0 }
   for (const r of planRows) plans[r.plan] = parseInt(r.count)
 
-  const trials = await subRepo.createQueryBuilder('s')
-    .where('s.trialEndsAt > :now', { now }).getCount()
+  const [trials, expiringSoon] = await Promise.all([
+    subRepo.createQueryBuilder('s').where('s.trialEndsAt > :now', { now: n }).getCount(),
+    subRepo.createQueryBuilder('s')
+      .where('s.endsAt > :now', { now: n })
+      .andWhere('s.endsAt < :soon', { soon: new Date(n.getTime() + 7 * 86400 * 1000) })
+      .andWhere('s.plan != :p', { p: 'free' })
+      .getCount(),
+  ])
 
-  const paid = plans.start + plans.pro + plans.max
-  const total = paid + plans.free
+  const total  = await userRepo.count()
+  const paid   = plans.start + plans.pro + plans.max
+  const convPct = total > 0 ? ((paid / total) * 100).toFixed(1) : '0'
 
   return (
-    `📋 <b>Подписки</b>\n\n` +
-    `🆓 Free: <b>${plans.free}</b>\n` +
-    `🚀 Старт: <b>${plans.start}</b>\n` +
-    `⚡️ Про: <b>${plans.pro}</b>\n` +
-    `💎 Макс: <b>${plans.max}</b>\n` +
-    `🎁 На триале: <b>${trials}</b>\n\n` +
-    `Платных: <b>${paid}</b> из ${total} (${total > 0 ? Math.round(paid / total * 100) : 0}%)`
+    `📋 <b>ПОДПИСКИ</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+
+    `🆓 Free:   <b>${plans.free}</b>  ${bar(plans.free, total)}\n` +
+    `🚀 Старт:  <b>${plans.start}</b>  ${bar(plans.start, total)}\n` +
+    `⚡ Про:    <b>${plans.pro}</b>  ${bar(plans.pro, total)}\n` +
+    `💎 Макс:   <b>${plans.max}</b>  ${bar(plans.max, total)}\n\n` +
+
+    `🎁 На триале:      <b>${trials}</b>\n` +
+    `⏰ Истекают <7д:   <b>${expiringSoon}</b>\n\n` +
+
+    `💡 Платных: <b>${paid}</b> из ${total}\n` +
+    `📈 Конверсия: <b>${convPct}%</b>  ${bar(paid, total)}\n\n` +
+
+    `🕐 <i>${now()}</i>`
   )
 }
 
-async function buildRevenueSection(): Promise<string> {
-  const now        = new Date()
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-  const prevStart  = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  const prevEnd    = new Date(now.getFullYear(), now.getMonth(), 1)
-  const yearStart  = new Date(now.getFullYear(), 0, 1)
+async function sectionRevenue(): Promise<string> {
+  const repo  = AppDataSource.getRepository(Payment)
+  const n     = new Date()
+  const monthStart  = new Date(n.getFullYear(), n.getMonth(), 1)
+  const prevStart   = new Date(n.getFullYear(), n.getMonth() - 1, 1)
+  const prevEnd     = monthStart
+  const yearStart   = new Date(n.getFullYear(), 0, 1)
 
-  const repo = AppDataSource.getRepository(Payment)
-
-  const query = (from: Date, to?: Date) => {
-    const q = repo.createQueryBuilder('p')
-      .select('SUM(p.amount)', 'total')
+  const q = async (from: Date, to?: Date) => {
+    const qb = repo.createQueryBuilder('p')
+      .select('COALESCE(SUM(p.amount), 0)', 'total')
       .addSelect('COUNT(*)', 'count')
       .where('p.status = :s', { s: 'succeeded' })
       .andWhere('p.createdAt >= :from', { from })
-    if (to) q.andWhere('p.createdAt < :to', { to })
-    return q.getRawOne<{ total: string; count: string }>()
+    if (to) qb.andWhere('p.createdAt < :to', { to })
+    return qb.getRawOne<{ total: string; count: string }>()
   }
 
-  const [month, prev, year, all] = await Promise.all([
-    query(monthStart),
-    query(prevStart, prevEnd),
-    query(yearStart),
-    query(new Date(0)),
-  ])
+  const byPlan = await repo.createQueryBuilder('p')
+    .select('p.plan', 'plan')
+    .addSelect('COALESCE(SUM(p.amount), 0)', 'total')
+    .addSelect('COUNT(*)', 'count')
+    .where('p.status = :s', { s: 'succeeded' })
+    .andWhere('p.createdAt >= :d', { d: monthStart })
+    .groupBy('p.plan')
+    .getRawMany<{ plan: string; total: string; count: string }>()
 
-  const toRub = (v: string | null) => (parseInt(v ?? '0') || 0).toLocaleString('ru-RU')
-  const monthRub = parseInt(month?.total ?? '0') || 0
-  const prevRub  = parseInt(prev?.total  ?? '0') || 0
-  const diff = monthRub - prevRub
-  const diffStr = diff >= 0 ? `+${diff.toLocaleString('ru-RU')} ₽` : `${diff.toLocaleString('ru-RU')} ₽`
+  const [month, prev, year, all] = await Promise.all([q(monthStart), q(prevStart, prevEnd), q(yearStart), q(new Date(0))])
+
+  const mRub = parseInt(month?.total ?? '0') || 0
+  const pRub = parseInt(prev?.total  ?? '0') || 0
+  const diff = mRub - pRub
+  const diffStr = diff >= 0 ? `+${rub(diff)}` : rub(diff)
+  const trendStr = trend(mRub, pRub)
+
+  const planLines = ['start', 'pro', 'max'].map(plan => {
+    const row = byPlan.find(r => r.plan === plan)
+    if (!row) return ''
+    const names: Record<string, string> = { start: '🚀 Старт', pro: '⚡ Про', max: '💎 Макс' }
+    return `  ${names[plan]}: ${rub(parseInt(row.total) || 0)} (${row.count} шт.)`
+  }).filter(Boolean).join('\n')
 
   return (
-    `💰 <b>Выручка</b>\n\n` +
-    `Этот месяц: <b>${toRub(month?.total ?? null)} ₽</b>\n` +
+    `💰 <b>ВЫРУЧКА</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+
+    `📅 Этот месяц: <b>${rub(mRub)}</b> ${trendStr}\n` +
     `  Платежей: ${month?.count ?? 0}\n` +
     `  vs прошлый: ${diffStr}\n\n` +
-    `Прошлый месяц: <b>${toRub(prev?.total ?? null)} ₽</b>\n` +
-    `За год: <b>${toRub(year?.total ?? null)} ₽</b>\n` +
-    `Всего за всё время: <b>${toRub(all?.total ?? null)} ₽</b>`
+
+    (planLines ? `По тарифам:\n${planLines}\n\n` : '') +
+
+    `📅 Прошлый месяц: <b>${rub(pRub)}</b>\n` +
+    `📅 За год: <b>${rub(parseInt(year?.total ?? '0') || 0)}</b>\n` +
+    `🏆 Всего за всё время: <b>${rub(parseInt(all?.total ?? '0') || 0)}</b>\n\n` +
+
+    `🕐 <i>${now()}</i>`
   )
 }
 
-async function buildActivitySection(): Promise<string> {
-  const now          = new Date()
-  const monthStart   = new Date(now.getFullYear(), now.getMonth(), 1)
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+async function sectionActivity(): Promise<string> {
+  const n          = new Date()
+  const todayStart = new Date(n.getFullYear(), n.getMonth(), n.getDate())
+  const monthStart = new Date(n.getFullYear(), n.getMonth(), 1)
+  const curMonth   = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`
 
-  const [totalChannels, totalPosts, publishedPosts, scheduledPosts, aiMonth] = await Promise.all([
+  const postRepo = AppDataSource.getRepository(Post)
+
+  const [
+    totalChannels, totalPosts,
+    published, scheduled, drafts,
+    postsToday, postsMonth,
+    aiMonth,
+  ] = await Promise.all([
     AppDataSource.getRepository(Channel).count(),
-    AppDataSource.getRepository(Post).count(),
-    AppDataSource.getRepository(Post).count({ where: { status: 'published' } }),
-    AppDataSource.getRepository(Post).count({ where: { status: 'scheduled' } }),
+    postRepo.count(),
+    postRepo.count({ where: { status: 'published' } }),
+    postRepo.count({ where: { status: 'scheduled' } }),
+    postRepo.count({ where: { status: 'draft' } }),
+    postRepo.createQueryBuilder('p').where('p.createdAt >= :d', { d: todayStart }).getCount(),
+    postRepo.createQueryBuilder('p').where('p.createdAt >= :d', { d: monthStart }).getCount(),
     AppDataSource.getRepository(UsageLog)
       .createQueryBuilder('u')
-      .select('SUM(u.aiGenerations)', 'total')
-      .where('u.month = :m', { m: currentMonth })
+      .select('COALESCE(SUM(u.aiGenerations), 0)', 'total')
+      .where('u.month = :m', { m: curMonth })
       .getRawOne<{ total: string }>()
       .then(r => parseInt(r?.total ?? '0') || 0),
   ])
 
-  const postsMonth = await AppDataSource.getRepository(Post)
-    .createQueryBuilder('p')
-    .where('p.createdAt >= :d', { d: monthStart })
-    .getCount()
-
   return (
-    `📢 <b>Активность</b>\n\n` +
-    `Каналов: <b>${totalChannels}</b>\n\n` +
-    `Постов всего: <b>${totalPosts}</b>\n` +
-    `  • Опубликовано: ${publishedPosts}\n` +
-    `  • Запланировано: ${scheduledPosts}\n` +
-    `  • Создано за месяц: ${postsMonth}\n\n` +
-    `🤖 AI-генераций за месяц: <b>${aiMonth}</b>`
+    `📢 <b>АКТИВНОСТЬ</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+
+    `📡 Каналов: <b>${totalChannels}</b>\n\n` +
+
+    `📝 Посты (всего ${totalPosts}):\n` +
+    `  ✅ Опубликовано:  ${published}  ${bar(published, totalPosts)}\n` +
+    `  ⏰ Запланировано: ${scheduled}  ${bar(scheduled, totalPosts)}\n` +
+    `  📄 Черновики:     ${drafts}  ${bar(drafts, totalPosts)}\n\n` +
+
+    `📥 Создано постов:\n` +
+    `  Сегодня: <b>${postsToday}</b>\n` +
+    `  Месяц:   <b>${postsMonth}</b>\n\n` +
+
+    `🤖 AI-генераций за месяц: <b>${aiMonth}</b>\n\n` +
+
+    `🕐 <i>${now()}</i>`
   )
 }
 
-function buildServerSection(): string {
-  const totalMem  = os.totalmem()
-  const freeMem   = os.freemem()
-  const usedMem   = totalMem - freeMem
-  const memPct    = Math.round(usedMem / totalMem * 100)
-  const uptimeSec = os.uptime()
-  const days      = Math.floor(uptimeSec / 86400)
-  const hours     = Math.floor((uptimeSec % 86400) / 3600)
-  const mins      = Math.floor((uptimeSec % 3600) / 60)
+function sectionServer(): string {
+  const totalMem = os.totalmem()
+  const freeMem  = os.freemem()
+  const usedMem  = totalMem - freeMem
+  const memPct   = Math.round(usedMem / totalMem * 100)
 
-  const loadAvg   = os.loadavg()
-  const cpus      = os.cpus().length
-  const load1     = loadAvg[0].toFixed(2)
-  const load5     = loadAvg[1].toFixed(2)
+  const load   = os.loadavg()
+  const cpus   = os.cpus()
+  const cpuModel = cpus[0]?.model.replace(/\s+/g, ' ').trim().substring(0, 30) ?? '—'
 
-  const toMb = (b: number) => (b / 1024 / 1024).toFixed(0)
+  const osUp   = os.uptime()
+  const osDays = Math.floor(osUp / 86400)
+  const osHrs  = Math.floor((osUp % 86400) / 3600)
+  const osMins = Math.floor((osUp % 3600) / 60)
 
-  const procMem   = process.memoryUsage()
-  const heapUsed  = (procMem.heapUsed / 1024 / 1024).toFixed(1)
-  const rss       = (procMem.rss / 1024 / 1024).toFixed(1)
+  const nodeUp   = process.uptime()
+  const nodeHrs  = Math.floor(nodeUp / 3600)
+  const nodeMins = Math.floor((nodeUp % 3600) / 60)
+
+  const proc   = process.memoryUsage()
+  const heap   = (proc.heapUsed / 1024 / 1024).toFixed(1)
+  const rss    = (proc.rss / 1024 / 1024).toFixed(1)
+
+  const memBar = bar(usedMem, totalMem)
+  const loadStatus = load[0] < 0.7 ? '🟢' : load[0] < 1.5 ? '🟡' : '🔴'
+  const memStatus  = memPct < 70 ? '🟢' : memPct < 90 ? '🟡' : '🔴'
 
   return (
-    `🖥️ <b>Сервер</b>\n\n` +
-    `💾 Память: <b>${toMb(usedMem)} / ${toMb(totalMem)} MB</b> (${memPct}%)\n` +
-    `   Node.js heap: ${heapUsed} MB | RSS: ${rss} MB\n\n` +
-    `⚙️ CPU: ${cpus} ядер | load: ${load1} / ${load5}\n\n` +
-    `⏱ Uptime ОС: ${days}д ${hours}ч ${mins}м\n` +
-    `⏱ Uptime Node: ${Math.floor(process.uptime() / 3600)}ч ${Math.floor(process.uptime() % 3600 / 60)}м\n\n` +
-    `🌍 Node.js ${process.version}\n` +
-    `📅 ${new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })} МСК`
+    `🖥️ <b>СЕРВЕР</b>\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+
+    `${memStatus} Память: <b>${mb(usedMem)} / ${mb(totalMem)}</b> (${memPct}%)\n` +
+    `  ${memBar}\n` +
+    `  Node heap: ${heap} MB  |  RSS: ${rss} MB\n\n` +
+
+    `${loadStatus} CPU: <b>${cpus.length} ядер</b>\n` +
+    `  ${cpuModel}\n` +
+    `  Load: ${load[0].toFixed(2)} / ${load[1].toFixed(2)} / ${load[2].toFixed(2)}\n\n` +
+
+    `⏱ Uptime ОС:    <b>${osDays}д ${osHrs}ч ${osMins}м</b>\n` +
+    `⏱ Uptime Node:  <b>${nodeHrs}ч ${nodeMins}м</b>\n\n` +
+
+    `🔧 Node.js ${process.version}  |  ${process.platform}\n\n` +
+
+    `🕐 <i>${now()}</i>`
   )
 }
 
-// ─── Клавиатура ───────────────────────────────────────────────────────────────
+async function sectionAll(): Promise<string> {
+  const [u, p, r, a] = await Promise.all([
+    sectionUsers(),
+    sectionPlans(),
+    sectionRevenue(),
+    sectionActivity(),
+  ])
+  const s = sectionServer()
+  const divider = '\n\n━━━━━━━━━━━━━━━━━━━━\n\n'
+  return [u, p, r, a, s].join(divider)
+}
+
+// ─── Клавиатуры ──────────────────────────────────────────────────────────────
 
 const mainKeyboard: TelegramBot.InlineKeyboardMarkup = {
   inline_keyboard: [
     [
-      { text: '👥 Пользователи', callback_data: 'users' },
-      { text: '📋 Подписки',     callback_data: 'plans' },
+      { text: '👥 Пользователи', callback_data: 'users'    },
+      { text: '📋 Подписки',     callback_data: 'plans'    },
     ],
     [
-      { text: '💰 Выручка',      callback_data: 'revenue' },
+      { text: '💰 Выручка',      callback_data: 'revenue'  },
       { text: '📢 Активность',   callback_data: 'activity' },
     ],
     [
-      { text: '🖥️ Сервер',       callback_data: 'server' },
-      { text: '🔄 Всё сразу',    callback_data: 'all' },
+      { text: '🖥️ Сервер',       callback_data: 'server'   },
+      { text: '📊 Всё сразу',    callback_data: 'all'      },
     ],
   ],
 }
 
-const backKeyboard: TelegramBot.InlineKeyboardMarkup = {
-  inline_keyboard: [[
-    { text: '◀️ Назад', callback_data: 'back' },
-    { text: '🔄 Обновить', callback_data: 'refresh_current' },
-  ]],
+function sectionKeyboard(section: string): TelegramBot.InlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [
+        { text: '◀️ Меню',       callback_data: 'back'            },
+        { text: '🔄 Обновить',   callback_data: `refresh:${section}` },
+      ],
+    ],
+  }
 }
 
-// ─── Утилиты отправки ────────────────────────────────────────────────────────
+const SECTION_LABELS: Record<string, string> = {
+  users: '👥 Пользователи', plans: '📋 Подписки',
+  revenue: '💰 Выручка',    activity: '📢 Активность',
+  server: '🖥️ Сервер',      all: '📊 Все данные',
+}
+
+// ─── Уведомления ─────────────────────────────────────────────────────────────
 
 async function send(text: string): Promise<void> {
   if (!isConfigured()) return
@@ -231,11 +365,10 @@ async function send(text: string): Promise<void> {
   }
 }
 
-// ─── Сервис ───────────────────────────────────────────────────────────────────
+// ─── Основной класс ───────────────────────────────────────────────────────────
 
 class AuditService {
   private bot: TelegramBot | null = null
-  private lastCallback: Record<number, string> = {} // chatId → last section
 
   async startPolling(): Promise<void> {
     if (!isConfigured()) return
@@ -245,125 +378,140 @@ class AuditService {
     } catch { /* ignore */ }
 
     this.bot = new TelegramBot(getToken(), { polling: { interval: 2000 } })
+    const b = this.bot
 
-    // /start — главное меню
-    this.bot.onText(/\/start/, async (msg) => {
+    const menuText = () =>
+      `🚀 <b>NeoPost Dashboard</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `Выбери раздел для просмотра статистики:\n\n` +
+      `👥 Пользователи — регистрации и прирост\n` +
+      `📋 Подписки — тарифы и конверсия\n` +
+      `💰 Выручка — доходы по периодам\n` +
+      `📢 Активность — посты и AI\n` +
+      `🖥️ Сервер — RAM, CPU, uptime\n` +
+      `📊 Всё сразу — полный дашборд\n\n` +
+      `<i>${now()}</i>`
+
+    const helpText =
+      `📖 <b>Команды бота</b>\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `/start — главное меню\n` +
+      `/stats — полная статистика\n` +
+      `/users — пользователи\n` +
+      `/plans — подписки\n` +
+      `/revenue — выручка\n` +
+      `/activity — активность\n` +
+      `/server — состояние сервера\n` +
+      `/help — эта справка`
+
+    // /start
+    b.onText(/\/start/, async (msg) => {
       if (!isOwner(msg.chat.id)) return
-      await this.bot!.sendMessage(
-        msg.chat.id,
-        `🚀 <b>NeoPost Dashboard</b>\n\nВыбери раздел:`,
-        { parse_mode: 'HTML', reply_markup: mainKeyboard },
-      ).catch(() => {})
+      await b.sendMessage(msg.chat.id, menuText(), {
+        parse_mode: 'HTML', reply_markup: mainKeyboard,
+      }).catch(() => {})
     })
+
+    // /help
+    b.onText(/\/help/, async (msg) => {
+      if (!isOwner(msg.chat.id)) return
+      await b.sendMessage(msg.chat.id, helpText, { parse_mode: 'HTML' }).catch(() => {})
+    })
+
+    // Команды разделов
+    const cmdMap: Record<string, () => Promise<string>> = {
+      stats:    sectionAll,
+      users:    sectionUsers,
+      plans:    sectionPlans,
+      revenue:  sectionRevenue,
+      activity: sectionActivity,
+      server:   async () => sectionServer(),
+    }
+
+    for (const [cmd, fn] of Object.entries(cmdMap)) {
+      b.onText(new RegExp(`^\\/${cmd}$`), async (msg) => {
+        if (!isOwner(msg.chat.id)) return
+        await b.sendChatAction(msg.chat.id, 'typing').catch(() => {})
+        const text = await fn()
+        await b.sendMessage(msg.chat.id, text, {
+          parse_mode: 'HTML',
+          reply_markup: cmd !== 'stats' ? sectionKeyboard(cmd) : sectionKeyboard('all'),
+        }).catch(() => {})
+      })
+    }
 
     // Inline callback
-    this.bot.on('callback_query', async (query) => {
+    b.on('callback_query', async (query) => {
       if (!isOwner(query.message?.chat.id ?? 0)) return
+      const chatId = query.message!.chat.id
+      const msgId  = query.message!.message_id
+      const data   = query.data ?? ''
 
-      const chatId  = query.message!.chat.id
-      const msgId   = query.message!.message_id
-      const data    = query.data ?? ''
+      if (data === 'back') {
+        await b.answerCallbackQuery(query.id).catch(() => {})
+        await b.editMessageText(menuText(), {
+          chat_id: chatId, message_id: msgId,
+          parse_mode: 'HTML', reply_markup: mainKeyboard,
+        }).catch(() => {})
+        return
+      }
 
-      await this.bot!.answerCallbackQuery(query.id, { text: '⏳ Загружаю...' }).catch(() => {})
+      const section = data.startsWith('refresh:') ? data.slice(8) : data
+      await b.answerCallbackQuery(query.id, { text: `Обновляю ${SECTION_LABELS[section] ?? ''}...` }).catch(() => {})
 
       try {
-        if (data === 'back') {
-          await this.bot!.editMessageText(
-            `🚀 <b>NeoPost Dashboard</b>\n\nВыбери раздел:`,
-            { chat_id: chatId, message_id: msgId, parse_mode: 'HTML', reply_markup: mainKeyboard },
-          ).catch(() => {})
-          return
-        }
-
-        if (data === 'refresh_current') {
-          const section = this.lastCallback[chatId] ?? 'all'
-          await this.sendSection(chatId, msgId, section)
-          return
-        }
-
-        this.lastCallback[chatId] = data
-        await this.sendSection(chatId, msgId, data)
-
+        const fn = cmdMap[section] ?? sectionAll
+        const text = await fn()
+        await b.editMessageText(text, {
+          chat_id: chatId, message_id: msgId,
+          parse_mode: 'HTML', reply_markup: sectionKeyboard(section),
+        }).catch(() => {})
       } catch (err) {
         console.error('[AUDIT] callback error:', err)
-        await this.bot!.answerCallbackQuery(query.id, { text: '❌ Ошибка' }).catch(() => {})
       }
     })
 
-    this.bot.on('polling_error', (err: Error) => {
-      if (!err.message.includes('409')) {
-        console.error('[AUDIT BOT] Polling error:', err.message)
-      }
+    b.on('polling_error', (err: Error) => {
+      if (!err.message.includes('409')) console.error('[AUDIT BOT] Polling error:', err.message)
     })
 
-    const stop = async () => { await this.bot?.stopPolling().catch(() => {}) }
+    const stop = async () => { await b.stopPolling().catch(() => {}) }
     process.once('SIGTERM', stop)
     process.once('SIGINT', stop)
 
     console.log('[AUDIT BOT] Started')
   }
 
-  private async sendSection(chatId: number, msgId: number, section: string): Promise<void> {
-    let text = ''
-
-    if (section === 'all') {
-      const [u, p, r, a] = await Promise.all([
-        buildUsersSection(),
-        buildPlansSection(),
-        buildRevenueSection(),
-        buildActivitySection(),
-      ])
-      text = [u, p, r, a, buildServerSection()].join('\n\n─────────────────\n\n')
-    } else if (section === 'users')    { text = await buildUsersSection()   }
-    else if (section === 'plans')      { text = await buildPlansSection()   }
-    else if (section === 'revenue')    { text = await buildRevenueSection() }
-    else if (section === 'activity')   { text = await buildActivitySection() }
-    else if (section === 'server')     { text = buildServerSection()        }
-
-    await this.bot!.editMessageText(text, {
-      chat_id: chatId,
-      message_id: msgId,
-      parse_mode: 'HTML',
-      reply_markup: backKeyboard,
-    }).catch(() => {})
-  }
-
-  // ─── Уведомления ─────────────────────────────────────────────────────────
+  // ─── Push-уведомления ──────────────────────────────────────────────────────
 
   notifyNewUser(user: {
-    id: string
-    email: string | null
-    username: string | null
-    firstName: string
-    via: 'email' | 'telegram'
+    id: string; email: string | null; username: string | null
+    firstName: string; via: 'email' | 'telegram'
   }): void {
     const who = user.email
       ? `📧 <b>${user.firstName}</b> (${user.email})`
       : `✈️ <b>${user.firstName}</b>${user.username ? ` @${user.username}` : ''}`
-
     send(
       `👤 <b>Новый пользователь</b>\n` +
       `${who}\n` +
       `Вход: ${user.via === 'email' ? 'Email' : 'Telegram'}\n` +
-      `ID: <code>${user.id}</code>`,
+      `ID: <code>${user.id}</code>\n` +
+      `🕐 ${now()}`,
     ).catch(() => {})
   }
 
   notifyNewPayment(info: {
-    userId: string
-    email: string | null
-    firstName: string
-    plan: string
-    months: number
-    amount: number
+    userId: string; email: string | null; firstName: string
+    plan: string; months: number; amount: number
   }): void {
-    const planNames: Record<string, string> = { start: 'Старт', pro: 'Про', max: 'Максимум' }
+    const names: Record<string, string> = { start: '🚀 Старт', pro: '⚡ Про', max: '💎 Макс' }
     send(
       `💰 <b>Новая оплата</b>\n` +
       `👤 ${info.firstName}${info.email ? ` (${info.email})` : ''}\n` +
-      `📦 Тариф: <b>${planNames[info.plan] ?? info.plan}</b> на ${info.months} мес.\n` +
-      `💵 Сумма: <b>${info.amount} ₽</b>\n` +
-      `ID: <code>${info.userId}</code>`,
+      `📦 ${names[info.plan] ?? info.plan} × ${info.months} мес.\n` +
+      `💵 <b>${rub(info.amount)}</b>\n` +
+      `ID: <code>${info.userId}</code>\n` +
+      `🕐 ${now()}`,
     ).catch(() => {})
   }
 }
