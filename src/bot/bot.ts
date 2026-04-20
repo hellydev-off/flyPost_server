@@ -8,7 +8,6 @@ import { postsService } from '../services/posts.service'
 import { schedulerService } from '../services/scheduler.service'
 
 const token = process.env.TELEGRAM_BOT_TOKEN!
-const WEBAPP_URL = process.env.WEBAPP_URL || 'https://app.neo-post.ru'
 
 // polling: false — запускается вручную через startBot()
 export const bot = new TelegramBot(token, { polling: false })
@@ -58,11 +57,6 @@ async function replyNotFound(chatId: number): Promise<void> {
   await bot.sendMessage(
     chatId,
     '❌ Аккаунт не найден.\n\nОткрой NeoPost и войди через Telegram, чтобы привязать аккаунт.',
-    {
-      reply_markup: {
-        inline_keyboard: [[{ text: '🚀 Открыть NeoPost', url: WEBAPP_URL }]],
-      },
-    },
   )
 }
 
@@ -87,9 +81,6 @@ function mainMenuKeyboard(): TelegramBot.InlineKeyboardMarkup {
       ],
       [
         { text: '📅 Запланировать пост', callback_data: 'menu:schedule_new' },
-      ],
-      [
-        { text: '🚀 Открыть NeoPost', url: WEBAPP_URL },
       ],
     ],
   }
@@ -125,9 +116,7 @@ async function handleStats(chatId: number, telegramId: number): Promise<void> {
 
   const channels = await getUserChannels(user.id)
   if (channels.length === 0) {
-    await bot.sendMessage(chatId, '📭 У тебя пока нет каналов.\n\nДобавь канал в NeoPost и назначь меня администратором.', {
-      reply_markup: { inline_keyboard: [[{ text: '🚀 Открыть NeoPost', url: WEBAPP_URL }]] },
-    })
+    await bot.sendMessage(chatId, '📭 У тебя пока нет каналов.\n\nДобавь канал в NeoPost и назначь меня администратором.')
     return
   }
 
@@ -181,7 +170,6 @@ async function handleDrafts(chatId: number, telegramId: number): Promise<void> {
     await bot.sendMessage(chatId, '📭 Черновиков нет.\n\nСоздай пост в NeoPost.', {
       reply_markup: {
         inline_keyboard: [
-          [{ text: '🚀 Открыть NeoPost', url: WEBAPP_URL }],
           [{ text: '🏠 Главное меню', callback_data: 'menu:home' }],
         ],
       },
@@ -366,7 +354,6 @@ async function handleSchedulePickDraft(chatId: number, telegramId: number, chann
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
-            [{ text: '🚀 Открыть NeoPost', url: WEBAPP_URL }],
             [{ text: '🏠 Главное меню', callback_data: 'menu:home' }],
           ],
         },
