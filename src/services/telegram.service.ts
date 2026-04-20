@@ -56,6 +56,10 @@ class TelegramService {
     const replyMarkup = options?.buttons?.length ? buildKeyboard(options.buttons) : undefined
     const protectContent = options?.protectContent ?? false
 
+    // Telegram caption limit: 1024 chars. If exceeded — send media without caption, then text separately.
+    const CAPTION_LIMIT = 1024
+    const needsSplit = content.length > CAPTION_LIMIT
+
     try {
       const bot = this.getBot()
       const media = mediaFiles?.filter(Boolean) ?? []
@@ -71,42 +75,72 @@ class TelegramService {
         } as any)
         messageId = msg.message_id
       } else if (media.length > 1) {
-        // Группа медиа
+        // Группа медиа — caption поддерживает только 1024 символа, кнопки не поддерживаются в группе
         const group: TelegramBot.InputMediaPhoto[] = media.map((f, i) => ({
           type: f.type === 'photo' ? 'photo' : 'video',
           media: fs.createReadStream(path.join(process.cwd(), 'uploads', path.basename(f.url))) as any,
-          caption: i === 0 ? content : undefined,
+          caption: (!needsSplit && i === 0) ? content : undefined,
           parse_mode: 'Markdown',
         } as any))
 
-        const msgs = await bot.sendMediaGroup(channelId, group, {
-          protect_content: protectContent,
-          reply_markup: replyMarkup,
-        } as any)
+        const msgs = await bot.sendMediaGroup(channelId, group, { protect_content: protectContent } as any)
         messageId = msgs[0].message_id
+
+        // Если текст длинный или есть кнопки — отправляем текст отдельно
+        if (needsSplit || replyMarkup) {
+          await bot.sendMessage(channelId, content, {
+            parse_mode: 'Markdown',
+            protect_content: protectContent,
+            reply_markup: replyMarkup,
+          } as any)
+        }
       } else {
         // Одиночный файл
         const file = media[0]
         const filePath = path.join(process.cwd(), 'uploads', path.basename(file.url))
-        const stream = fs.createReadStream(filePath)
-        const opts: any = {
-          caption: content,
-          parse_mode: 'Markdown' as const,
-          protect_content: protectContent,
-          reply_markup: replyMarkup,
-        }
 
         let msg: TelegramBot.Message
-        if (file.type === 'photo') {
-          msg = await bot.sendPhoto(channelId, stream, opts)
-        } else if (file.type === 'video') {
-          msg = await bot.sendVideo(channelId, stream, opts)
-        } else if (file.type === 'audio') {
-          msg = await bot.sendAudio(channelId, stream, opts)
+
+        if (needsSplit) {
+          // Текст слишком длинный для caption — отправляем медиа без подписи, затем текст отдельно
+          const stream = fs.createReadStream(filePath)
+          const baseOpts: any = { protect_content: protectContent }
+          if (file.type === 'photo') {
+            msg = await bot.sendPhoto(channelId, stream, baseOpts)
+          } else if (file.type === 'video') {
+            msg = await bot.sendVideo(channelId, stream, baseOpts)
+          } else if (file.type === 'audio') {
+            msg = await bot.sendAudio(channelId, stream, baseOpts)
+          } else {
+            msg = await bot.sendDocument(channelId, stream, baseOpts)
+          }
+          messageId = msg.message_id
+
+          await bot.sendMessage(channelId, content, {
+            parse_mode: 'Markdown',
+            protect_content: protectContent,
+            reply_markup: replyMarkup,
+          } as any)
         } else {
-          msg = await bot.sendDocument(channelId, stream, opts)
+          const stream = fs.createReadStream(filePath)
+          const opts: any = {
+            caption: content,
+            parse_mode: 'Markdown' as const,
+            protect_content: protectContent,
+            reply_markup: replyMarkup,
+          }
+
+          if (file.type === 'photo') {
+            msg = await bot.sendPhoto(channelId, stream, opts)
+          } else if (file.type === 'video') {
+            msg = await bot.sendVideo(channelId, stream, opts)
+          } else if (file.type === 'audio') {
+            msg = await bot.sendAudio(channelId, stream, opts)
+          } else {
+            msg = await bot.sendDocument(channelId, stream, opts)
+          }
+          messageId = msg.message_id
         }
-        messageId = msg.message_id
       }
 
       if (options?.pinAfterPublish) {
