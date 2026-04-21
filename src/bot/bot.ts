@@ -60,6 +60,39 @@ async function replyNotFound(chatId: number): Promise<void> {
   )
 }
 
+const REQUIRED_CHANNEL = '@neopostchannel'
+
+async function isSubscribed(telegramId: number): Promise<boolean> {
+  try {
+    const member = await bot.getChatMember(REQUIRED_CHANNEL, telegramId)
+    return ['member', 'administrator', 'creator', 'restricted'].includes(member.status)
+  } catch {
+    // Если канал недоступен — не блокируем
+    return true
+  }
+}
+
+async function requireSubscription(chatId: number, telegramId: number): Promise<boolean> {
+  if (await isSubscribed(telegramId)) return true
+
+  await bot.sendMessage(
+    chatId,
+    `📢 *Подпишись на наш канал!*\n\n` +
+    `Чтобы пользоваться ботом NeoPost, необходимо быть подписчиком нашего канала.\n\n` +
+    `После подписки нажми кнопку ниже 👇`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '📢 Подписаться на NeoPost', url: `https://t.me/${REQUIRED_CHANNEL.slice(1)}` }],
+          [{ text: '✅ Я подписался', callback_data: 'check_sub' }],
+        ],
+      },
+    },
+  )
+  return false
+}
+
 function channelKeyboard(channels: Channel[], callbackPrefix: string): TelegramBot.InlineKeyboardButton[][] {
   const rows = channels.map(ch => [
     { text: `📢 ${ch.title}`, callback_data: `${callbackPrefix}:${ch.id}:${ch.title}` },
@@ -89,8 +122,12 @@ function mainMenuKeyboard(): TelegramBot.InlineKeyboardMarkup {
 // ─── Handlers ──────────────────────────────────────────────────────────────────
 
 async function handleStart(msg: TelegramBot.Message): Promise<void> {
+  const telegramId = msg.from?.id
+  if (!telegramId) return
+  if (!await requireSubscription(msg.chat.id, telegramId)) return
+
   const name = msg.from?.first_name || 'друг'
-  clearState(msg.from!.id)
+  clearState(telegramId)
 
   await bot.sendMessage(
     msg.chat.id,
@@ -383,48 +420,45 @@ export function startBot(): void {
   // /start
   bot.onText(/\/start/, handleStart)
 
+  // Helper — проверить подписку перед выполнением команды
+  async function withSub(msg: TelegramBot.Message, fn: (chatId: number, telegramId: number) => Promise<void>): Promise<void> {
+    const telegramId = msg.from?.id
+    if (!telegramId) return
+    if (!await requireSubscription(msg.chat.id, telegramId)) return
+    await fn(msg.chat.id, telegramId)
+  }
+
   // /help
-  bot.onText(/\/help/, (msg) => {
-    bot.sendMessage(
-      msg.chat.id,
-      `📋 *Команды NeoPost:*\n\n` +
-      `/stats — статистика каналов\n` +
-      `/drafts — черновики\n` +
-      `/schedule — запланированные посты\n` +
-      `/idea — сгенерировать идею поста\n` +
-      `/new — запланировать публикацию\n` +
-      `/help — эта справка`,
-      {
-        parse_mode: 'Markdown',
-        reply_markup: mainMenuKeyboard(),
-      },
-    )
+  bot.onText(/\/help/, async (msg) => {
+    await withSub(msg, async (chatId) => {
+      bot.sendMessage(
+        chatId,
+        `📋 *Команды NeoPost:*\n\n` +
+        `/stats — статистика каналов\n` +
+        `/drafts — черновики\n` +
+        `/schedule — запланированные посты\n` +
+        `/idea — сгенерировать идею поста\n` +
+        `/new — запланировать публикацию\n` +
+        `/help — эта справка`,
+        { parse_mode: 'Markdown', reply_markup: mainMenuKeyboard() },
+      )
+    })
   })
 
   // /stats
-  bot.onText(/\/stats/, msg => {
-    if (msg.from?.id) handleStats(msg.chat.id, msg.from.id)
-  })
+  bot.onText(/\/stats/, msg => withSub(msg, handleStats))
 
   // /drafts
-  bot.onText(/\/drafts/, msg => {
-    if (msg.from?.id) handleDrafts(msg.chat.id, msg.from.id)
-  })
+  bot.onText(/\/drafts/, msg => withSub(msg, handleDrafts))
 
   // /schedule
-  bot.onText(/\/schedule/, msg => {
-    if (msg.from?.id) handleScheduleList(msg.chat.id, msg.from.id)
-  })
+  bot.onText(/\/schedule/, msg => withSub(msg, handleScheduleList))
 
   // /idea
-  bot.onText(/\/idea/, msg => {
-    if (msg.from?.id) handleIdeaPickChannel(msg.chat.id, msg.from.id)
-  })
+  bot.onText(/\/idea/, msg => withSub(msg, handleIdeaPickChannel))
 
   // /new — запланировать пост
-  bot.onText(/\/new/, msg => {
-    if (msg.from?.id) handleScheduleNewPickChannel(msg.chat.id, msg.from.id)
-  })
+  bot.onText(/\/new/, msg => withSub(msg, handleScheduleNewPickChannel))
 
   // ─── Text messages (state machine) ───────────────────────────────────────────
 
@@ -432,6 +466,8 @@ export function startBot(): void {
     const telegramId = msg.from?.id
     const chatId = msg.chat.id
     if (!telegramId || !msg.text || msg.text.startsWith('/')) return
+
+    if (!await requireSubscription(chatId, telegramId)) return
 
     const state = getState(telegramId)
 
@@ -506,6 +542,25 @@ export function startBot(): void {
 
     if (!chatId || !data) return
     await bot.answerCallbackQuery(query.id)
+
+    // ── Проверка подписки ──
+    if (data === 'check_sub') {
+      if (await isSubscribed(telegramId)) {
+        await bot.sendMessage(chatId,
+          '✅ Отлично! Ты подписан. Добро пожаловать в NeoPost! 🎉',
+          { reply_markup: mainMenuKeyboard() },
+        )
+      } else {
+        await bot.answerCallbackQuery(query.id, {
+          text: '❌ Ты ещё не подписан. Подпишись и попробуй снова.',
+          show_alert: true,
+        })
+      }
+      return
+    }
+
+    // Для всех остальных кнопок — тоже проверяем подписку
+    if (!await requireSubscription(chatId, telegramId)) return
 
     // ── Главное меню ──
     if (data === 'menu:home') {
