@@ -132,6 +132,20 @@ class ProfileService {
 
     return { channels, posts, published, scheduled }
   }
+
+  async checkChannelSubscription(userId: string): Promise<boolean> {
+    const user = await this.userRepo.findOne({ where: { id: userId } })
+    if (!user?.telegramId) return false
+
+    try {
+      const { bot } = await import('../bot/bot')
+      const member = await bot.getChatMember('@neopostchannel', parseInt(user.telegramId, 10))
+      return ['member', 'administrator', 'creator', 'restricted'].includes(member.status)
+    } catch {
+      // Если канал недоступен — не блокируем
+      return true
+    }
+  }
 }
 
 export const profileService = new ProfileService()

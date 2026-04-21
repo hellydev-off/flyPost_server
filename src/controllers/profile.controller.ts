@@ -30,6 +30,11 @@ export const profileController = {
     res.json(stats)
   },
 
+  async checkSubscription(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const subscribed = await profileService.checkChannelSubscription(req.user!.userId)
+    res.json({ subscribed })
+  },
+
   async getPhoto(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const buffer = await profileService.getPhotoBuffer(req.user!.userId)

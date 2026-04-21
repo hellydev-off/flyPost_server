@@ -11,5 +11,6 @@ router.patch('/', profileController.updateProfile)
 router.post('/change-password', profileController.changePassword)
 router.get('/stats', profileController.getStats)
 router.get('/photo', profileController.getPhoto)
+router.get('/subscription', profileController.checkSubscription)
 
 export default router
