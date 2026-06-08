@@ -1,11 +1,16 @@
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcrypt'
+import crypto from 'crypto'
 import { AppDataSource } from '../config/database'
 import { User } from '../entities/User'
 import { AppError } from '../utils/AppError'
 import { validateTelegramData } from '../utils/validateTelegramData'
 import { subscriptionService } from './subscription.service'
 import { auditService } from './audit.service'
+
+function generateReferralCode(): string {
+  return crypto.randomBytes(4).toString('hex').toUpperCase()
+}
 
 interface AuthResult {
   token: string
@@ -58,6 +63,7 @@ class AuthService {
       firstName,
       telegramId: null,
       username: null,
+      referralCode: generateReferralCode(),
     })
     await this.userRepo.save(user)
     // Init 14-day trial subscription (fire-and-forget)
@@ -86,7 +92,7 @@ class AuthService {
     return this.toResult(user, this.signToken(user.id))
   }
 
-  async authenticateWithTelegram(initData: string): Promise<AuthResult> {
+  async authenticateWithTelegram(initData: string, utmSource?: string): Promise<AuthResult> {
     const parsed = validateTelegramData(initData)
     if (!parsed) {
       throw new AppError('Invalid Telegram data', 401)
@@ -101,13 +107,16 @@ class AuthService {
         telegramId,
         firstName: tgUser.first_name,
         username: tgUser.username ?? null,
+        referralCode: generateReferralCode(),
       })
+      if (utmSource) user.utmSource = utmSource
       await this.userRepo.save(user)
       subscriptionService.getOrCreate(user.id).catch(() => {})
       auditService.notifyNewUser({ id: user.id, email: null, username: user.username, firstName: user.firstName, via: 'telegram' })
     } else {
       user.firstName = tgUser.first_name
       if (tgUser.username !== undefined) user.username = tgUser.username ?? null
+      if (utmSource && !user.utmSource) user.utmSource = utmSource
       await this.userRepo.save(user)
     }
 

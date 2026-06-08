@@ -15,6 +15,7 @@ interface ProfileData {
   createdAt: string
   hasPassword: boolean
   hasPhoto: boolean
+  utmSource: string | null
 }
 
 interface ProfileStats {
@@ -42,6 +43,7 @@ class ProfileService {
       createdAt: user.createdAt.toISOString(),
       hasPassword: !!user.passwordHash,
       hasPhoto: !!user.telegramId,
+      utmSource: user.utmSource ?? null,
     }
   }
 
@@ -89,6 +91,7 @@ class ProfileService {
       createdAt: user.createdAt.toISOString(),
       hasPassword: !!user.passwordHash,
       hasPhoto: !!user.telegramId,
+      utmSource: user.utmSource ?? null,
     }
   }
 

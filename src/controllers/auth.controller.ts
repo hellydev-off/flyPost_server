@@ -19,8 +19,8 @@ export const authController = {
   },
 
   async telegram(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { initData } = req.body as { initData: string }
-    const result = await authService.authenticateWithTelegram(initData)
+    const { initData, utmSource } = req.body as { initData: string; utmSource?: string }
+    const result = await authService.authenticateWithTelegram(initData, utmSource)
     res.json(result)
   },
 

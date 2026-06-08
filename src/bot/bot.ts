@@ -126,23 +126,54 @@ async function handleStart(msg: TelegramBot.Message): Promise<void> {
   if (!telegramId) return
   if (!await requireSubscription(msg.chat.id, telegramId)) return
 
-  const name = msg.from?.first_name || 'друг'
   clearState(telegramId)
+
+  // Parse /start param: ref_XXXX or utm_source
+  const param = msg.text?.split(' ')[1]?.trim() ?? ''
+
+  if (param) {
+    const user = await findUserByTelegramId(telegramId)
+    if (user) {
+      if (param.startsWith('ref_')) {
+        // Referral handled separately when referral service exists
+        const code = param.slice(4)
+        const referral = await AppDataSource.getRepository(User).findOne({ where: { referralCode: code } })
+        if (referral && referral.id !== user.id) {
+          const { referralService } = await import('../services/referral.service')
+          await referralService.processReferral(referral.id, user.id).catch(() => {})
+        }
+      } else if (!param.startsWith('ref_')) {
+        // Save UTM source
+        if (!user.utmSource) {
+          user.utmSource = param
+          await AppDataSource.getRepository(User).save(user)
+        }
+      }
+    } else if (param && !param.startsWith('ref_')) {
+      // New user — UTM will be saved after they authenticate via Mini App
+      // We store it temporarily in state so auth can pick it up
+    }
+  }
+
+  const appUrl = process.env.MINI_APP_URL || 'https://t.me/neoPostBot/app'
 
   await bot.sendMessage(
     msg.chat.id,
-    `👋 Привет, *${name}*!\n\n` +
-    `Я бот *NeoPost* — помогаю управлять Telegram-каналами прямо из чата.\n\n` +
-    `Что умею:\n` +
-    `📊 Показывать статистику твоих каналов\n` +
-    `📝 Давать доступ к черновикам и публиковать их\n` +
-    `🗓 Показывать запланированные посты\n` +
-    `💡 Генерировать идеи для постов с помощью AI\n` +
-    `📅 Планировать публикацию прямо из бота\n\n` +
-    `Выбери, что нужно:`,
+    `Привет! 👋\n\n` +
+    `Я помогу тебе вести Telegram-канал на автопилоте —\n` +
+    `даже если нет времени и идей для постов.\n\n` +
+    `Вот что я умею:\n` +
+    `✍️ Пишу посты через AI за 10 секунд\n` +
+    `📅 Публикую по расписанию сам\n` +
+    `📊 Слежу за здоровьем канала\n\n` +
+    `🎁 Первые 14 дней — полный PRO бесплатно`,
     {
-      parse_mode: 'Markdown',
-      reply_markup: mainMenuKeyboard(),
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🚀 Начать бесплатно', web_app: { url: appUrl } }],
+          [{ text: '📋 Главное меню', callback_data: 'menu:home' }],
+        ],
+      },
     },
   )
 }

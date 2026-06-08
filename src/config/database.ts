@@ -14,6 +14,7 @@ import { UsageLog } from '../entities/UsageLog'
 import { AiPlan } from '../entities/AiPlan'
 import { ActionLog } from '../entities/ActionLog'
 import { Payment } from '../entities/Payment'
+import { Referral } from '../entities/Referral'
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -24,6 +25,6 @@ export const AppDataSource = new DataSource({
   database: process.env.DB_NAME || 'neopost',
   synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV === 'development',
-  entities: [User, Channel, Post, ScheduledPost, Competitor, ChannelStatsHistory, Template, ChannelProfile, UserAchievement, UserSubscription, UsageLog, AiPlan, ActionLog, Payment],
+  entities: [User, Channel, Post, ScheduledPost, Competitor, ChannelStatsHistory, Template, ChannelProfile, UserAchievement, UserSubscription, UsageLog, AiPlan, ActionLog, Payment, Referral],
   migrations: ['dist/migrations/**/*.js'],
 })

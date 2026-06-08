@@ -26,10 +26,12 @@ import achievementRoutes from './routes/achievement.routes'
 import subscriptionRoutes from './routes/subscription.routes'
 import adminRoutes from './routes/admin.routes'
 import newsRoutes from './routes/news.routes'
+import referralRoutes from './routes/referral.routes'
 
 import { schedulerService } from './services/scheduler.service'
 import { auditService } from './services/audit.service'
 import { statsCollectorService } from './services/statsCollector.service'
+import { reminderService } from './services/reminderService'
 
 function validateEnv(): void {
   // Поддерживаем оба варианта названия переменной пароля БД
@@ -106,6 +108,7 @@ app.use('/api/achievements', achievementRoutes)
 app.use('/api/subscription', subscriptionRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/news', newsRoutes)
+app.use('/api/referrals', referralRoutes)
 
 // --- Error handler (должен быть последним) ---
 app.use(errorMiddleware)
@@ -119,6 +122,7 @@ async function bootstrap(): Promise<void> {
 
   schedulerService.initialize()
   statsCollectorService.initialize()
+  reminderService.initialize()
 
   if (!isMockMode) {
     const { startBot } = await import('./bot/bot')

@@ -28,6 +28,12 @@ export class User {
   @Column()
   firstName!: string
 
+  @Column({ nullable: true, type: 'varchar' })
+  utmSource!: string | null
+
+  @Column({ nullable: true, type: 'varchar', unique: true })
+  referralCode!: string | null
+
   @CreateDateColumn()
   createdAt!: Date
 
