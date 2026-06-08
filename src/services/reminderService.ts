@@ -7,9 +7,9 @@ import { Channel } from '../entities/Channel'
 import { ChannelStatsHistory } from '../entities/ChannelStatsHistory'
 import { isMockMode } from '../utils/mockMode'
 import { bot } from '../bot/bot'
-import { Between, MoreThan } from 'typeorm'
+import { Between, MoreThan, Not, IsNull } from 'typeorm'
 
-const APP_URL = process.env.MINI_APP_URL || 'https://t.me/neoPostBot/app'
+const APP_URL = process.env.MINI_APP_URL || process.env.FRONTEND_URL || 'https://app.neo-post.ru'
 
 function dayLabel(n: number): string {
   if (n % 10 === 1 && n % 100 !== 11) return 'день'
@@ -46,7 +46,7 @@ async function sendStreakReminders(): Promise<void> {
   const userRepo = AppDataSource.getRepository(User)
   const postRepo = AppDataSource.getRepository(Post)
 
-  const users = await userRepo.find({ where: { telegramId: MoreThan('0') } } as never)
+  const users = await userRepo.find({ where: { telegramId: Not(IsNull()) } })
 
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
@@ -84,7 +84,7 @@ async function sendWeeklyDigest(): Promise<void> {
   const channelRepo = AppDataSource.getRepository(Channel)
   const historyRepo = AppDataSource.getRepository(ChannelStatsHistory)
 
-  const users = await userRepo.find({ where: { telegramId: MoreThan('0') } } as never)
+  const users = await userRepo.find({ where: { telegramId: Not(IsNull()) } })
 
   const weekAgo = new Date()
   weekAgo.setDate(weekAgo.getDate() - 7)

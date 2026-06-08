@@ -155,7 +155,7 @@ async function handleStart(msg: TelegramBot.Message): Promise<void> {
     }
   }
 
-  const appUrl = process.env.MINI_APP_URL || 'https://t.me/neoPostBot/app'
+  const appUrl = process.env.MINI_APP_URL || process.env.FRONTEND_URL || 'https://app.neo-post.ru'
 
   await bot.sendMessage(
     msg.chat.id,

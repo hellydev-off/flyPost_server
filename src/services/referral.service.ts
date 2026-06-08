@@ -1,7 +1,12 @@
+import crypto from 'crypto'
 import { AppDataSource } from '../config/database'
 import { Referral } from '../entities/Referral'
 import { UserSubscription } from '../entities/UserSubscription'
 import { User } from '../entities/User'
+
+function generateCode(): string {
+  return crypto.randomBytes(4).toString('hex').toUpperCase()
+}
 
 const BONUS_TIERS: Array<{ referrals: number; bonusDays: number }> = [
   { referrals: 1, bonusDays: 7 },
@@ -61,8 +66,16 @@ class ReferralService {
     nextTierReferrals: number | null
     nextTierBonus: number | null
   }> {
-    const user = await this.userRepo.findOne({ where: { id: userId } })
-    const referralCode = user?.referralCode ?? ''
+    let user = await this.userRepo.findOne({ where: { id: userId } })
+    if (!user) throw new Error('User not found')
+
+    // Генерируем код для старых юзеров, у которых его ещё нет
+    if (!user.referralCode) {
+      user.referralCode = generateCode()
+      await this.userRepo.save(user)
+    }
+
+    const referralCode = user.referralCode
     const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'neoPostBot'
     const referralLink = `https://t.me/${botUsername}?start=ref_${referralCode}`
 
