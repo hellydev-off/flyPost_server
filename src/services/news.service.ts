@@ -216,7 +216,7 @@ class NewsService {
         source: source.label,
         sourceLabel: source.label,
         category: source.category,
-        imageUrl: this.extractImage(item as RssParser.Item & Record<string, unknown>),
+        imageUrl: this.extractImage(item as unknown as RssParser.Item & Record<string, unknown>),
       }))
     } catch {
       return []
