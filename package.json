@@ -33,6 +33,7 @@
     "node-telegram-bot-api": "^0.66.0",
     "pg": "^8.11.5",
     "reflect-metadata": "^0.2.2",
+    "rss-parser": "^3.13.0",
     "typeorm": "^0.3.20",
     "uuid": "^9.0.1"
   },

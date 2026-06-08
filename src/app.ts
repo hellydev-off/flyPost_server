@@ -25,6 +25,7 @@ import templateRoutes from './routes/template.routes'
 import achievementRoutes from './routes/achievement.routes'
 import subscriptionRoutes from './routes/subscription.routes'
 import adminRoutes from './routes/admin.routes'
+import newsRoutes from './routes/news.routes'
 
 import { schedulerService } from './services/scheduler.service'
 import { auditService } from './services/audit.service'
@@ -104,6 +105,7 @@ app.use('/api/templates', templateRoutes)
 app.use('/api/achievements', achievementRoutes)
 app.use('/api/subscription', subscriptionRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/news', newsRoutes)
 
 // --- Error handler (должен быть последним) ---
 app.use(errorMiddleware)
