@@ -13,5 +13,6 @@ router.get('/status', subscriptionController.getStatus)
 router.post('/payment/init', subscriptionController.initPayment)
 router.post('/payment/confirm', subscriptionController.confirmPayment)
 router.post('/downgrade-free', subscriptionController.downgradeFree)
+router.post('/dev-set-plan', subscriptionController.devSetPlan)
 
 export default router

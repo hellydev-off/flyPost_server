@@ -334,6 +334,25 @@ class SubscriptionService {
     await this.subRepo.save(sub)
   }
 
+  /** DEV ONLY: set any plan instantly without payment */
+  async devSetPlan(userId: string, plan: PlanKey): Promise<ReturnType<typeof this.getStatus>> {
+    if (process.env.NODE_ENV === 'production') throw new AppError('Not available in production', 403)
+    const sub = await this.getOrCreate(userId)
+    if (plan === 'free') {
+      sub.plan = 'free'
+      sub.subscriptionEndsAt = null
+      sub.trialEndsAt = null
+    } else {
+      sub.plan = plan
+      const endsAt = new Date()
+      endsAt.setFullYear(endsAt.getFullYear() + 10) // 10 лет = "навсегда" для дева
+      sub.subscriptionEndsAt = endsAt
+      sub.trialEndsAt = null
+    }
+    await this.subRepo.save(sub)
+    return this.getStatus(userId)
+  }
+
   /** Activate a plan after successful payment */
   async activatePlan(userId: string, plan: Exclude<PlanKey, 'free'>, months: number): Promise<UserSubscription> {
     const sub = await this.getOrCreate(userId)

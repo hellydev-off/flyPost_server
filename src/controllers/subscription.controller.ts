@@ -49,4 +49,10 @@ export const subscriptionController = {
     const status = await subscriptionService.getStatus(req.user!.userId)
     res.json(status)
   },
+
+  async devSetPlan(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { plan } = req.body as { plan: PlanKey }
+    const status = await subscriptionService.devSetPlan(req.user!.userId, plan)
+    res.json(status)
+  },
 }
