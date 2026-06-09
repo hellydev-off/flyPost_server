@@ -140,6 +140,10 @@ class ProfileService {
     const user = await this.userRepo.findOne({ where: { id: userId } })
     if (!user?.telegramId) return false
 
+    // Owner bypass
+    const ownerIds = (process.env.OWNER_TELEGRAM_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)
+    if (ownerIds.includes(user.telegramId)) return true
+
     try {
       const { bot } = await import('../bot/bot')
       const member = await bot.getChatMember('@neopostchannel', parseInt(user.telegramId, 10))
