@@ -63,6 +63,10 @@ async function replyNotFound(chatId: number): Promise<void> {
 const REQUIRED_CHANNEL = '@neopostchannel'
 
 async function isSubscribed(telegramId: number): Promise<boolean> {
+  // Owner always passes
+  const ownerIds = (process.env.OWNER_TELEGRAM_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)
+  if (ownerIds.includes(String(telegramId))) return true
+
   try {
     const member = await bot.getChatMember(REQUIRED_CHANNEL, telegramId)
     return ['member', 'administrator', 'creator', 'restricted'].includes(member.status)
