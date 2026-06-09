@@ -92,7 +92,7 @@ class AuthService {
     return this.toResult(user, this.signToken(user.id))
   }
 
-  async authenticateWithTelegram(initData: string, utmSource?: string): Promise<AuthResult> {
+  async authenticateWithTelegram(initData: string, utmSource?: string, referralCode?: string): Promise<AuthResult> {
     const parsed = validateTelegramData(initData)
     if (!parsed) {
       throw new AppError('Invalid Telegram data', 401)
@@ -102,6 +102,8 @@ class AuthService {
     const telegramId = String(tgUser.id)
 
     let user = await this.userRepo.findOne({ where: { telegramId } })
+    const isNew = !user
+
     if (!user) {
       user = this.userRepo.create({
         telegramId,
@@ -118,6 +120,15 @@ class AuthService {
       if (tgUser.username !== undefined) user.username = tgUser.username ?? null
       if (utmSource && !user.utmSource) user.utmSource = utmSource
       await this.userRepo.save(user)
+    }
+
+    // Process referral only for new users (to avoid re-counting on re-login)
+    if (isNew && referralCode) {
+      const referrer = await this.userRepo.findOne({ where: { referralCode } })
+      if (referrer && referrer.id !== user.id) {
+        const { referralService } = await import('./referral.service')
+        referralService.processReferral(referrer.id, user.id).catch(() => {})
+      }
     }
 
     return this.toResult(user, this.signToken(user.id))
