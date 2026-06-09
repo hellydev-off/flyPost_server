@@ -65,7 +65,8 @@ const REQUIRED_CHANNEL = '@neopostchannel'
 async function isSubscribed(telegramId: number): Promise<boolean> {
   // Owner always passes
   const ownerIds = (process.env.OWNER_TELEGRAM_IDS ?? '').split(',').map(s => s.trim()).filter(Boolean)
-  if (ownerIds.includes(String(telegramId))) return true
+  console.log(`[BOT] isSubscribed check: telegramId=${telegramId}, ownerIds=${JSON.stringify(ownerIds)}`)
+  if (ownerIds.includes(String(telegramId))) { console.log('[BOT] Owner bypass: granted'); return true }
 
   try {
     const member = await bot.getChatMember(REQUIRED_CHANNEL, telegramId)
